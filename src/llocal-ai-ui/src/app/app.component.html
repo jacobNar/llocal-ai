@@ -1,0 +1,151 @@
+<main>
+  <mat-drawer-container class="example-container" [hasBackdrop]="false">
+    <mat-drawer #drawer mode="side" opened="true">
+      <div class="doc-list" *ngIf="documentsLoading">
+        <mat-progress-spinner
+          *ngIf="documentsLoading"
+          mode="indeterminate"
+        ></mat-progress-spinner>
+      </div>
+      <div class="doc-list" *ngIf="!documentsLoading">
+        <button click="resetDashboard()" class="add-doc">Add Document</button>
+        <button (click)="drawer.toggle()" style="padding: none">
+          <mat-icon style="color: black; font-size: unset">chevron_left</mat-icon>
+        </button>
+        <button
+          class="document"
+          mat-menu-item
+          *ngFor="let document of customerDocuments; let i = index"
+          (click)="loadDocument(i)"
+        >
+          <mat-icon>chat</mat-icon>
+          <span>{{ document.document_name }}</span>
+        </button>
+      </div>
+      <div class="side-menu">
+        <a routerLink="/dashboard">
+          <button mat-menu-item class="document">
+            <mat-icon>chat</mat-icon>
+            <span>Dashboard</span>
+          </button>
+        </a>
+        <button
+          mat-menu-item
+          (click)="createCustomerPortalSession()"
+          class="document"
+        >
+          <mat-icon>account_balance_wallet</mat-icon>
+          <span>Manage Subscription</span>
+        </button>
+  
+        <button
+          mat-icon-button
+          aria-label="Sign Out"
+          (click)="signOut()"
+          class="document"
+        >
+          <mat-icon>exit_to_app</mat-icon>
+          <span>Logout</span>
+        </button>
+      </div>
+    </mat-drawer>
+    <mat-drawer-content>
+      <button (click)="drawer.toggle()" class="open-close">
+        <mat-icon>chevron_right</mat-icon>
+      </button>
+      <div class="dashboard">
+        <section class="file-upload-section" *ngIf="!docSubmitted">
+          <mat-tab-group>
+            <mat-tab label="Upload Document">
+              <mat-progress-spinner
+                *ngIf="processingDocument"
+                mode="indeterminate"
+              ></mat-progress-spinner>
+              <form *ngIf="!docSubmitted">
+                <input
+                  id="file-input"
+                  type="file"
+                  (change)="changeHandler($event)"
+                  hidden
+                />
+                <div
+                  class="drag-and-drop"
+                  [class.invalid]="docError"
+                  (drop)="dropHandler($event)"
+                  (dragover)="dragOverHandler($event)"
+                  (click)="clickHandler()"
+                  [@shake]="docError ? 'invalid' : 'valid'"
+                >
+                  Upload a Microsoft Word or text file
+                </div>
+              </form>
+            </mat-tab>
+            <mat-tab label="Upload Text">
+              <form [formGroup]="modelForm" *ngIf="!docSubmitted">
+                <mat-form-field>
+                  <!-- <label>Enter document text</label><br /> -->
+                  <textarea
+                    matInput
+                    formControlName="data"
+                    rows="20"
+                    placeholder="Enter document text"
+                  ></textarea>
+                </mat-form-field>
+  
+                <input
+                  [disabled]="modelForm.invalid"
+                  type="submit"
+                  value="Submit"
+                />
+              </form>
+            </mat-tab>
+          </mat-tab-group>
+        </section>
+        <section *ngIf="docSubmitted">
+          <div class="chat-container">
+            <div *ngFor="let message of messages">
+              <div class="question-container">
+                <p class="question">{{ message.question }}</p>
+              </div>
+              <div class="answer-container">
+                <p class="answer">{{ message.answer }}</p>
+              </div>
+            </div>
+            <mat-progress-spinner
+              *ngIf="awaitingAnswer"
+              mode="indeterminate"
+            ></mat-progress-spinner>
+          </div>
+        </section>
+  
+        <br /><br />
+        <section class="query-form-container">
+          <form
+            class="query-form"
+            (submit)="onQuery($event)"
+            [formGroup]="chatInput">
+            <div class="query-input">
+              <input type="text" formControlName="query" />
+              <!-- <input [disabled]="chatInput.invalid" type="submit" value="Submit" /> -->
+              <mat-icon (click)="onQuery($event)">send</mat-icon>
+            </div>
+          </form>
+        </section>
+  
+        <div
+          class="instructions"
+          *ngIf="
+            !firstQuestionAsked &&
+            docSubmitted == true &&
+            processingDocument == false
+          "
+        >
+          <h2>LLocal AI</h2>
+          <p>Try asking a question about your document</p>
+        </div>
+      </div>
+    </mat-drawer-content>
+  </mat-drawer-container>
+  
+</main>
+<router-outlet></router-outlet>

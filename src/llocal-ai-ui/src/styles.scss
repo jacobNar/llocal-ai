@@ -1,0 +1,342 @@
+// Custom Theming for Angular Material
+// For more information: https://material.angular.io/guide/theming
+@use '@angular/material' as mat;
+// Plus imports for other components in your app.
+
+// Include the common styles for Angular Material. We include this here so that you only
+// have to load a single css file for Angular Material in your app.
+// Be sure that you only ever include this mixin once!
+@include mat.core();
+
+// Define the palettes for your theme using the Material Design palettes available in palette.scss
+// (imported above). For each palette, you can optionally specify a default, lighter, and darker
+// hue. Available color palettes: https://material.io/design/color/
+$llocal-ai-primary: mat.define-palette(mat.$indigo-palette);
+$llocal-ai-accent: mat.define-palette(mat.$pink-palette, A200, A100, A400);
+
+// The warn palette is optional (defaults to red).
+$llocal-ai-warn: mat.define-palette(mat.$red-palette);
+
+// Create the theme object. A theme consists of configurations for individual
+// theming systems such as "color" or "typography".
+$llocal-ai-theme: mat.define-light-theme((color: (primary: $llocal-ai-primary,
+        accent: $llocal-ai-accent,
+        warn: $llocal-ai-warn,
+      )));
+
+// Include theme styles for core and each component used in your app.
+// Alternatively, you can import and @include the theme mixins for each component
+// that you are using.
+@include mat.all-component-themes($llocal-ai-theme);
+
+/* You can add global styles to this file, and also import other style files */
+
+/* You can add global styles to this file, and also import other style files */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: Roboto, "Helvetica Neue", sans-serif;
+  color: white;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+/* Track */
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+  background: #888;
+}
+
+/* Handle on hover */
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.mat-form-field {
+  width: 80%;
+  margin: auto
+}
+
+nav {
+  height: 8%;
+  background: grey;
+  padding: 10px 5px;
+  display: flex;
+  justify-content: space-between;
+}
+
+mat-drawer button.document {
+  display: block;
+  background: none;
+  border: none;
+  color: white;
+  /* font-size: 1.5em; */
+  text-align: left;
+}
+
+/* mat-drawer .add-doc {
+
+} */
+
+
+.mat-drawer .material-icons {
+  font-size: 15px
+}
+
+.side-menu {
+  padding-top: 10px;
+}
+
+form {
+  text-align: center;
+  margin: 20px
+}
+
+form input[type='submit'] {
+  padding: 10px;
+  display: block;
+  margin: auto;
+  padding: 10px 20px;
+  background-color: #444654;
+  color: white;
+}
+
+form textarea {
+  padding: 10px !important;
+  border: 1px solid black;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.5);
+  border-radius: 5px;
+  height: 400px;
+  resize: none;
+}
+
+textarea.mat-input-element {
+  background: #40414f;
+}
+
+label {
+  color: white !important
+}
+
+.mat-tab-label {
+  color: white;
+  opacity: 1 !important;
+}
+
+.mat-input-element {
+  caret-color: white !important;
+}
+
+.mat-progress-spinner {
+  margin: 5% auto;
+}
+
+.chat-container,
+.file-upload-section {
+  height: 80vh;
+  overflow: auto;
+}
+
+.chat-container div p {
+  text-align: left;
+  padding: 2% 20%;
+  font-size: 1.3em;
+  margin: auto;
+  width: 40%;
+  color: white !important;
+}
+
+.question-container {
+  width: 100%;
+}
+
+.answer-container {
+  width: 100%;
+  background: #444654
+}
+
+/* .question{
+
+}
+
+.answer {
+
+} */
+
+.query-form-container {
+  /* position: absolute;
+    bottom: 5%; */
+  height: 10vh;
+  width: 100%;
+  /* background-image: linear-gradient(180deg,rgba(53,55,64,0),#353740 58.85%); */
+}
+
+.query-form {
+  width: 50%;
+  margin: 20px auto;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.5);
+}
+
+.query-input {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 5px;
+  border: rgba(32, 33, 35, .5);
+  align-items: center;
+  border-radius: 5px;
+  background: #40414f;
+  cursor: text;
+}
+
+.query-form input,
+input:focus-visible {
+  outline: none;
+  border: none;
+  font-size: 20px;
+  background: #40414f;
+  caret-color: white;
+  color: white;
+  cursor: text;
+}
+
+.query-form input:nth-of-type(1) {
+  flex-basis: 90%;
+}
+
+.query-form .mat-icon {
+  color: #ffffffab
+}
+
+.drag-and-drop {
+  border: dashed 1px white;
+  height: 400px;
+  width: 80%;
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: box-shadow 0.5s ease;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.5);
+  border-radius: 5px;
+  color: white;
+}
+
+.drag-and-drop:hover {
+  box-shadow: 0 0 5px 5px rgb(0 0 0 / 0.5);
+  /* Add a box shadow with the desired glow color */
+}
+
+.dashboard {
+  background: #343541;
+  height: 100vh;
+}
+
+.instructions {
+  text-align: center;
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.instructions h2 {
+  font-size: 3em
+}
+
+.invalid {
+  border: dashed 1px red;
+}
+
+input:disabled {
+  cursor: not-allowed;
+}
+
+mat-drawer {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  color: white;
+  background-color: #282424 !important;
+  overflow: auto;
+  height: 100%;
+  /* overflow-x: scroll; */
+  width: 15%;
+}
+
+button.open-close {
+  position: absolute;
+  top: 50%;
+  /* right: 0; */
+  left: 0;
+  transform: translateY(-50%);
+  /* padding: 10px; */
+  /* background-color: #fff; */
+  /* border: 1px solid #ccc; */
+  border-radius: 4px;
+  cursor: pointer;
+  z-index: 3;
+  /* Ensure the button appears above the side menu */
+  /* color */
+}
+
+.doc-list {
+  height: 85%;
+  overflow: auto;
+}
+
+mat-drawer div:nth-of-type(2) {
+  height: 5%;
+  border-top: thin solid white;
+}
+
+.mat-drawer .mat-icon,
+button span {
+  color: white;
+}
+
+
+
+@media only screen and (max-width: 768px) {
+  .chat-container div p {
+    text-align: left;
+    padding: 2% 20%;
+    font-size: 1.3em;
+    margin: auto;
+    width: 50%
+  }
+}
+
+@media only screen and (max-width: 450px) {
+  .chat-container div p {
+    text-align: left;
+    padding: 2%;
+    font-size: 1.3em;
+    margin: auto;
+    width: 80%
+  }
+
+  .query-form {
+    width: 95%
+  }
+
+  mat-drawer {
+    width: 80%;
+  }
+
+  mat-drawer-content {
+    margin-left: 0 !important;
+  }
+}
