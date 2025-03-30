@@ -11,6 +11,10 @@ import { ChatOllama, OllamaEmbeddings } from "@langchain/ollama";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import {RecursiveCharacterTextSplitter} from "langchain/text_splitter";
 import type { Document } from '@langchain/core/documents';
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+// import { MemorySaver } from "@langchain/langgraph";
 
 @Component({
   selector: 'app-root',
@@ -31,10 +35,13 @@ export class AppComponent {
   chatInput: FormGroup;
   fileForm: FormGroup;
 
+  agent: any;
   llm: ChatOllama;
   embeddings: OllamaEmbeddings;
+//   memory: MemorySaver;
   vectorStore: MemoryVectorStore;
   textSplitter = new RecursiveCharacterTextSplitter()
+  tools: any[] = [];
   docSubmitted = false;
   processingDocument = false;
   firstQuestionAsked = false;
@@ -49,14 +56,7 @@ export class AppComponent {
 
   messages:any [] = []
 
-  aiMessages: any[] = [
-    [
-        "system",
-        `You are a helpful assistant that answers questions based on the context and query provided.
-        If the knowledge is not in the context, 
-        simnply answer that there is not enough information has been supplied to answer the question`,
-    ]
-]
+  aiMessages: any[] = []
 
   documentEmbeddings = []
   documentText = []
@@ -72,7 +72,7 @@ export class AppComponent {
       });
 
       this.chatInput = this.fb.group({
-          query: new FormControl({value: null, disabled: true}, [Validators.required])
+          query: new FormControl({value: null, disabled: false}, [Validators.required])
       });
 
       this.fileForm = this.fb.group({
@@ -95,9 +95,59 @@ export class AppComponent {
 
       this.vectorStore = new MemoryVectorStore(this.embeddings);
 
+    //   const agentCheckpointer = new MemorySaver()
+
       this.textSplitter.chunkSize = 200;
       this.textSplitter.chunkOverlap = 0;
+
+      let webTool = tool(async ({ url }: { url: string }): Promise<string> => {
+        let page = await fetch(url)
+        if(page.ok){
+            let text = await page.text();
+            // Create a temporary DOM element to parse the HTML
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(text, 'text/html');
+
+            // Remove script and style elements
+            const scripts = doc.getElementsByTagName('script');
+            const styles = doc.getElementsByTagName('style');
+            Array.from(scripts).forEach(script => script.remove());
+            Array.from(styles).forEach(style => style.remove());
+
+            // Extract text content and clean it up
+            let content = doc.body.textContent || '';
+            content = content
+                .replace(/[\r\n]+/g, '\n')    // normalize line breaks
+                .replace(/[\t]+/g, ' ')       // replace tabs with spaces
+                .replace(/\s{2,}/g, ' ')      // remove extra spaces
+                .trim();                      // trim whitespace
+
+            return content;
+        }else {
+            return "Failed to get page content from the URL provided: " + url
+        }
+      },
+        {
+            name: "URL to text",
+            description: "Pass in a url and get the text of the webpage",
+            schema: z.object({
+              url: z.string().describe("url to grab text from"),
+            })
+        }
+    )
+
+    this.tools  = [webTool];
+
+    console.log(this.tools)
+
+    this.agent = createReactAgent({
+        llm: this.llm,
+        tools: this.tools,
+    })
+
   }
+
+
 
   updateDocuments(data: any){
       console.log(data)
@@ -119,7 +169,6 @@ export class AppComponent {
             metadata: {}
         }));
         await this.vectorStore.addDocuments(documents)
-        debugger
         this.chatInput.controls['query'].enable();
         this.documentText = postData.text;
         this.processingDocument = false;
@@ -145,21 +194,31 @@ export class AppComponent {
 
       try {
         //var queryEmbedding = this.embeddings.embedQuery(query);
-        var bestmatches = await this.vectorStore.similaritySearch(query, 10)
-        const context = bestmatches.map(doc => doc.pageContent).join("\n");
-
-        var prompt = ["human", "Context:" + context + "\n\n Query:\n" + query]
+        let prompt: any;
+        if(this.docSubmitted){
+            var bestmatches = await this.vectorStore.similaritySearch(query, 10)
+            const context = bestmatches.map(doc => doc.pageContent).join("\n");
+            prompt = {role: "user", content: "Context:" + context + "\n\n Query:\n" + query}
+        }else {
+            this.docSubmitted = true;
+            prompt = {role: "user", content: query}
+        }
 
         this.aiMessages.push(prompt);
         console.log(this.aiMessages);
-        const aiMsg = await this.llm.invoke(this.aiMessages);
-
+        const aiMsg = await this.agent.invoke({messages: this.aiMessages});
+        let messagesLength = aiMsg.messages.length - 1
         console.log(aiMsg);
         this.queryError = false;
         this.awaitingAnswer = false;
         this.messages.push({
             question: query,
-            answer: aiMsg.content
+            answer: aiMsg.messages[messagesLength].content
+        })
+
+        this.aiMessages.push({
+            role:"assistant",
+            content: aiMsg.messages[messagesLength].content
         })
         
         
@@ -285,10 +344,4 @@ export class AppComponent {
   ngOnDestroy(): void {
       this.$customerDocuments.unsubscribe();
   }
-}
-
-class Similarity {
-  "text": string
-  "name": number
-
 }
