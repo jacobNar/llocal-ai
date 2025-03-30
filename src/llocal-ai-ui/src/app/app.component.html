@@ -57,10 +57,6 @@
         <section class="file-upload-section" *ngIf="!docSubmitted">
           <mat-tab-group>
             <mat-tab label="Upload Document">
-              <mat-progress-spinner
-                *ngIf="processingDocument"
-                mode="indeterminate"
-              ></mat-progress-spinner>
               <form *ngIf="!docSubmitted">
                 <input
                   id="file-input"
@@ -101,6 +97,7 @@
             </mat-tab>
           </mat-tab-group>
         </section>
+
         <section *ngIf="docSubmitted">
           <div class="chat-container">
             <div *ngFor="let message of messages">
@@ -111,8 +108,8 @@
                 <p class="answer">{{ message.answer }}</p>
               </div>
             </div>
-            <mat-progress-spinner
-              *ngIf="awaitingAnswer"
+            <mat-progress-spinner class="instructions"
+              *ngIf="awaitingAnswer || processingDocument"
               mode="indeterminate"
             ></mat-progress-spinner>
           </div>
