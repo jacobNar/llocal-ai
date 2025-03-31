@@ -23,30 +23,7 @@
         </button>
       </div>
       <div class="side-menu">
-        <a routerLink="/dashboard">
-          <button mat-menu-item class="document">
-            <mat-icon>chat</mat-icon>
-            <span>Dashboard</span>
-          </button>
-        </a>
-        <button
-          mat-menu-item
-          (click)="createCustomerPortalSession()"
-          class="document"
-        >
-          <mat-icon>account_balance_wallet</mat-icon>
-          <span>Manage Subscription</span>
-        </button>
-  
-        <button
-          mat-icon-button
-          aria-label="Sign Out"
-          (click)="signOut()"
-          class="document"
-        >
-          <mat-icon>exit_to_app</mat-icon>
-          <span>Logout</span>
-        </button>
+        <p>No menu options yets</p>
       </div>
     </mat-drawer>
     <mat-drawer-content>
@@ -101,11 +78,15 @@
         <section *ngIf="docSubmitted">
           <div class="chat-container">
             <div *ngFor="let message of messages">
-              <div class="question-container">
-                <p class="question">{{ message.question }}</p>
+              <div *ngIf="message.role === 'user'" class="question-container">
+                <p><mat-icon>person</mat-icon>{{message.role}}</p>
+                <p>
+                  {{ message.content }}
+                </p>
               </div>
-              <div class="answer-container">
-                <p class="answer">{{ message.answer }}</p>
+              <div *ngIf="message.role === 'tool' || message.role === 'assistant'" class="answer-container">
+                <p><mat-icon>smart_toy</mat-icon>{{message.role}}</p>
+                <p>{{ message.content }}</p>
               </div>
             </div>
             <mat-progress-spinner class="instructions"

@@ -14,6 +14,7 @@ import type { Document } from '@langchain/core/documents';
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { HumanMessage } from "@langchain/core/messages";
 // import { MemorySaver } from "@langchain/langgraph";
 
 @Component({
@@ -191,6 +192,7 @@ export class AppComponent {
       if(!this.firstQuestionAsked) { this.firstQuestionAsked = true}
       var query = this.chatInput.controls['query'].value
       this.awaitingAnswer = true;
+      this.chatInput.controls['query'].setValue("")
 
       try {
         //var queryEmbedding = this.embeddings.embedQuery(query);
@@ -202,25 +204,36 @@ export class AppComponent {
         }else {
             this.docSubmitted = true;
             prompt = {role: "user", content: query}
+            // prompt = new HumanMessage(query)
         }
 
         this.aiMessages.push(prompt);
-        console.log(this.aiMessages);
-        const aiMsg = await this.agent.invoke({messages: this.aiMessages});
-        let messagesLength = aiMsg.messages.length - 1
-        console.log(aiMsg);
-        this.queryError = false;
-        this.awaitingAnswer = false;
-        this.messages.push({
-            question: query,
-            answer: aiMsg.messages[messagesLength].content
-        })
+        this.messages.push(prompt)
 
-        this.aiMessages.push({
-            role:"assistant",
-            content: aiMsg.messages[messagesLength].content
-        })
-        
+        let previousLength = this.aiMessages.length;
+
+        const aiMsg = await this.agent.invoke({messages: this.aiMessages});
+        const messages = aiMsg.messages;
+        console.log(previousLength, messages.length)
+        console.log(aiMsg)
+        for(let i = previousLength; i < messages.length; i++){
+            let messageType = this.getMessageType(messages[i])
+            this.messages.push({
+                role: messageType,
+                content: messages[i].content,
+                lc_kwargs: messages[i].lc_kwargs
+            })
+
+            if(messageType != "tool"){
+                this.aiMessages.push({
+                    role: messageType,
+                    content: messages[i].content,
+                })
+            }
+        }
+
+        this.queryError = false;
+        this.awaitingAnswer = false;       
         
       }catch(error){
         this.queryError = true;
@@ -335,6 +348,15 @@ export class AppComponent {
       this.docSubmitted = false;
       this.documentEmbeddings = [];
       this.documentText = [];
+  }
+
+  getMessageType(msg: any){
+    console.log(typeof msg)
+    if (msg.tool_call_id != undefined) {
+        return "tool"
+    }else {
+        return "assistant"
+    }
   }
 
   ngOnInit(): void {

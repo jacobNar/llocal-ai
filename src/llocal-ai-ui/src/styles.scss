@@ -1,37 +1,18 @@
-// Custom Theming for Angular Material
-// For more information: https://material.angular.io/guide/theming
 @use '@angular/material' as mat;
-// Plus imports for other components in your app.
 
-// Include the common styles for Angular Material. We include this here so that you only
-// have to load a single css file for Angular Material in your app.
-// Be sure that you only ever include this mixin once!
-@include mat.core();
+// Define your custom dark theme
+$dark-primary: mat.define-palette(mat.$blue-gray-palette, 700);
+$dark-accent: mat.define-palette(mat.$yellow-palette);
+$dark-warn: mat.define-palette(mat.$red-palette);
 
-// Define the palettes for your theme using the Material Design palettes available in palette.scss
-// (imported above). For each palette, you can optionally specify a default, lighter, and darker
-// hue. Available color palettes: https://material.io/design/color/
-$llocal-ai-primary: mat.define-palette(mat.$indigo-palette);
-$llocal-ai-accent: mat.define-palette(mat.$pink-palette, A200, A100, A400);
+$dark-theme: mat.define-dark-theme((color: (primary: $dark-primary,
+        active: $dark-accent,
+        accent: $dark-accent,
+        warn: $dark-warn,
+      ),
+    ));
 
-// The warn palette is optional (defaults to red).
-$llocal-ai-warn: mat.define-palette(mat.$red-palette);
-
-// Create the theme object. A theme consists of configurations for individual
-// theming systems such as "color" or "typography".
-$llocal-ai-theme: mat.define-light-theme((color: (primary: $llocal-ai-primary,
-        accent: $llocal-ai-accent,
-        warn: $llocal-ai-warn,
-      )));
-
-// Include theme styles for core and each component used in your app.
-// Alternatively, you can import and @include the theme mixins for each component
-// that you are using.
-@include mat.all-component-themes($llocal-ai-theme);
-
-/* You can add global styles to this file, and also import other style files */
-
-/* You can add global styles to this file, and also import other style files */
+@include mat.all-component-themes($dark-theme);
 
 html,
 body {
@@ -63,7 +44,7 @@ body {
   background: #555;
 }
 
-.mat-form-field {
+mat-form-field {
   width: 80%;
   margin: auto
 }
@@ -118,6 +99,7 @@ form textarea {
   box-shadow: 0 3px 10px rgb(0 0 0 / 0.5);
   border-radius: 5px;
   height: 400px;
+  width: 80%;
   resize: none;
 }
 
@@ -148,13 +130,23 @@ label {
   overflow: auto;
 }
 
+.chat-container {
+  mat-icon {
+    vertical-align: text-bottom;
+    margin-right: 5px;
+  }
+}
+
 .chat-container div p {
   text-align: left;
-  padding: 2% 20%;
+  padding: 1% 0%;
   font-size: 1.3em;
   margin: auto;
-  width: 40%;
+  width: 80%;
   color: white !important;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .question-container {
