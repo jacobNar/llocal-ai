@@ -139,32 +139,24 @@ label {
 
 .chat-container div p {
   text-align: left;
-  padding: 1% 0%;
   font-size: 1.3em;
-  margin: auto;
-  width: 80%;
+  width: 100%;
   color: white !important;
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
 
-.question-container {
-  width: 100%;
+.question-container,
+.answer-container {
+  width: 80%;
+  margin: 0 auto;
+  padding: 1% 2%;
 }
 
 .answer-container {
-  width: 100%;
   background: #444654
 }
-
-/* .question{
-
-}
-
-.answer {
-
-} */
 
 .query-form-container {
   /* position: absolute;

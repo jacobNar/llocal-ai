@@ -85,8 +85,20 @@
                 </p>
               </div>
               <div *ngIf="message.role === 'tool' || message.role === 'assistant'" class="answer-container">
-                <p><mat-icon>smart_toy</mat-icon>{{message.role}}</p>
-                <p>{{ message.content }}</p>
+                <p><mat-icon>smart_toy</mat-icon>{{message.role.charAt(0).toUpperCase() + message.role.slice(1)}}</p>
+                <p *ngIf="message.content != ''">{{ message.content }}</p>
+                <div *ngIf="message.role === 'assistant'" >
+                  <p *ngIf="message.lc_kwargs.tool_calls.length > 0"><b>Tool Calls:</b></p>
+                  <div *ngFor="let tool_call of message.lc_kwargs.tool_calls">
+                    <p><b>Tool name:</b> {{tool_call.name}}</p>
+                    <p><b>Inputs:</b></p>
+                    <ul>
+                      <li *ngFor="let key of tool_call.args | keyvalue">
+                        {{ key.key }}: {{ key.value }}
+                      </li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
             <mat-progress-spinner class="instructions"
