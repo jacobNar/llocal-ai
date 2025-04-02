@@ -127,7 +127,7 @@ export class AppComponent {
     });
 
     const vectoreStoreTool = tool(async ({ query }: { query: string }): Promise<string> => {
-        var results: Document[] = await this.vectorStore.similaritySearch(query, 15)
+        var results: Document[] = await this.vectorStore.similaritySearch(query, 30)
         var resultsText = results.map(x=> x.pageContent).join("\n\n")
         return resultsText;
     }, {
