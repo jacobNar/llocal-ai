@@ -17,7 +17,7 @@
     "name": "jacobNar",
     "email": "jdnarayan56@gmail.com"
   },
-  "license": "MIT",
+  "license": "CC",
   "dependencies": {
     "@angular/animations": "^17.3.12",
     "@angular/cdk": "^16.2.14",
@@ -38,6 +38,7 @@
     "jszip": "^3.10.1",
     "langchain": "^0.3.19",
     "ollama": "^0.5.14",
+    "puppeteer": "^24.5.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.14.10"

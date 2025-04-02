@@ -54,19 +54,18 @@
               </form>
             </mat-tab>
             <mat-tab label="Upload Text">
-              <form [formGroup]="modelForm" *ngIf="!docSubmitted">
+              <form [formGroup]="urlForm" *ngIf="!docSubmitted" (ngSubmit)="onUrlSubmit()">
                 <mat-form-field>
                   <!-- <label>Enter document text</label><br /> -->
-                  <textarea
+                  <input
                     matInput
-                    formControlName="data"
-                    rows="20"
-                    placeholder="Enter document text"
-                  ></textarea>
+                    formControlName="url"
+                    placeholder="Enter url of site to chat with"
+                  >
                 </mat-form-field>
   
                 <input
-                  [disabled]="modelForm.invalid"
+                  [disabled]="urlForm.invalid"
                   type="submit"
                   value="Submit"
                 />
@@ -131,7 +130,8 @@
           "
         >
           <h2>LLocal AI</h2>
-          <p>Try asking a question about your document</p>
+          <p>Upload a document or scan a website</p>
+          <p>Then start asking questions</p>
         </div>
       </div>
     </mat-drawer-content>

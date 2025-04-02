@@ -5,18 +5,14 @@ import { ApiService } from "./services/api.service";
 import { FileService } from "./services/file.service";
 import { trigger, state, style, transition, animate } from '@angular/animations';
 import {MatSnackBar, MatSnackBarRef} from '@angular/material/snack-bar';
-// import * as netlifyIdentity from 'netlify-identity-widget';
 import { Subscription, pipe } from "rxjs";
 import { ChatOllama, OllamaEmbeddings } from "@langchain/ollama";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import {RecursiveCharacterTextSplitter} from "langchain/text_splitter";
 import type { Document } from '@langchain/core/documents';
-import { tool } from "@langchain/core/tools";
+import { DynamicTool, tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
-import { HumanMessage } from "@langchain/core/messages";
-// import { MemorySaver } from "@langchain/langgraph";
-
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
@@ -34,7 +30,7 @@ export class AppComponent {
   amount = 15;
   modelForm: FormGroup;
   chatInput: FormGroup;
-  fileForm: FormGroup;
+  urlForm: FormGroup;
 
   agent: any;
   llm: ChatOllama;
@@ -67,18 +63,20 @@ export class AppComponent {
   customerDocuments: any;
   $customerDocuments: Subscription;
 
+  webCrawlerTool: any
+
   constructor(private fb: FormBuilder,  private api: ApiService, private fileService: FileService, private _snackBar: MatSnackBar, private router: Router){
       this.modelForm = this.fb.group({
           data: new FormControl("", Validators.required),
       });
 
+      this.urlForm = this.fb.group({
+        url: new FormControl("", Validators.required)
+      })
+
       this.chatInput = this.fb.group({
           query: new FormControl({value: null, disabled: false}, [Validators.required])
       });
-
-      this.fileForm = this.fb.group({
-          file: new FormControl("",)
-      })
 
       this.$customerDocuments = this.api.$customerDocuments.subscribe((data: any) => this.updateDocuments(data))
 
@@ -101,43 +99,47 @@ export class AppComponent {
       this.textSplitter.chunkSize = 200;
       this.textSplitter.chunkOverlap = 0;
 
-      let webTool = tool(async ({ url }: { url: string }): Promise<string> => {
-        let page = await fetch(url)
-        if(page.ok){
-            let text = await page.text();
-            // Create a temporary DOM element to parse the HTML
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(text, 'text/html');
+    interface SiteContent {
+        [url: string]: string;
+    }
+    
+    this.webCrawlerTool = tool(async ({ startUrl }: { startUrl: string }): Promise<string> => {
+        var response: SiteContent = await (window as any).electronAPI.webCrawlerTool(startUrl);
+        var urlPages = Object.values(response)
+        var urls = Object.keys(response)
+        const documents: Document[] = [];
+        
+        urlPages.map(async (urlPage: string, index: number) =>{
+            var sentences = await this.textSplitter.splitText(urlPage);
+            let documents = sentences.map(sentence => ({
+                pageContent: sentence,
+                metadata: {url: urls[index]}
+            }));
+            await this.vectorStore.addDocuments(documents)
+        })
+        return "urls vectorized: " + urls.join(", ");
+    }, {
+        name: "Website Crawler",
+        description: "Crawls a website starting from the given URL and adds the whole site's text to a vector store. You can retrieve the sites info by using the tool 'Similarity Search Vectorized Websites'.",
+        schema: z.object({
+            startUrl: z.string().url().describe("The starting URL to crawl")
+        })
+    });
 
-            // Remove script and style elements
-            const scripts = doc.getElementsByTagName('script');
-            const styles = doc.getElementsByTagName('style');
-            Array.from(scripts).forEach(script => script.remove());
-            Array.from(styles).forEach(style => style.remove());
+    const vectoreStoreTool = tool(async ({ query }: { query: string }): Promise<string> => {
+        var results: Document[] = await this.vectorStore.similaritySearch(query, 15)
+        var resultsText = results.map(x=> x.pageContent).join("\n\n")
+        return resultsText;
+    }, {
+        name: "Similarity Search Vectorized Websites",
+        description: "Grabs context via similarity search from the previously vectorized website.",
+        schema: z.object({
+            query: z.string().describe("The query to do a similarity search based on")
+        })
+    });
 
-            // Extract text content and clean it up
-            let content = doc.body.textContent || '';
-            content = content
-                .replace(/[\r\n]+/g, '\n')    // normalize line breaks
-                .replace(/[\t]+/g, ' ')       // replace tabs with spaces
-                .replace(/\s{2,}/g, ' ')      // remove extra spaces
-                .trim();                      // trim whitespace
 
-            return content;
-        }else {
-            return "Failed to get page content from the URL provided: " + url
-        }
-      },
-        {
-            name: "URL to text",
-            description: "Pass in a url and get the text of the webpage",
-            schema: z.object({
-              url: z.string().describe("url to grab text from"),
-            })
-        }
-    )
-
-    this.tools  = [webTool];
+    this.tools  = [vectoreStoreTool];
 
     console.log(this.tools)
 
@@ -148,6 +150,25 @@ export class AppComponent {
 
   }
 
+  async onUrlSubmit(){
+    this.chatInput.controls['query'].disable();
+    this.docSubmitted = true;
+    this.processingDocument = true;
+    try {
+        await this.webCrawlerTool.invoke({startUrl: this.urlForm.controls['url'].value})
+        this.chatInput.controls['query'].enable();
+        this.processingDocument = false;
+
+      }catch (error){
+        console.log(error);
+        this.docError = true;
+        this.processingDocument = false;
+        this.docSubmitted = false;
+        this._snackBar.open('Please was a problem processing you url, please try again or use a url.', 'X', {
+            duration: 3000
+        });
+      }
+  }
 
 
   updateDocuments(data: any){
@@ -157,6 +178,7 @@ export class AppComponent {
   }
 
   async onSubmit(file: File) {
+      this.chatInput.controls['query'].disable();
       // event.preventDefault();
       this.processingDocument = true
       var postData = {
@@ -195,16 +217,9 @@ export class AppComponent {
       this.chatInput.controls['query'].setValue("")
 
       try {
-        //var queryEmbedding = this.embeddings.embedQuery(query);
-        let prompt: any;
+        let prompt = {role: "user", content: query}
         if(this.docSubmitted){
-            var bestmatches = await this.vectorStore.similaritySearch(query, 10)
-            const context = bestmatches.map(doc => doc.pageContent).join("\n");
-            prompt = {role: "user", content: "Context:" + context + "\n\n Query:\n" + query}
-        }else {
-            this.docSubmitted = true;
-            prompt = {role: "user", content: query}
-            // prompt = new HumanMessage(query)
+            prompt.content +=" \nPlease use the 'Similarity Search Vectorized Websites' tool for context."
         }
 
         this.aiMessages.push(prompt);
@@ -214,8 +229,10 @@ export class AppComponent {
 
         const aiMsg = await this.agent.invoke({messages: this.aiMessages});
         const messages = aiMsg.messages;
+
         console.log(previousLength, messages.length)
         console.log(aiMsg)
+
         for(let i = previousLength; i < messages.length; i++){
             let messageType = this.getMessageType(messages[i])
             this.messages.push({
