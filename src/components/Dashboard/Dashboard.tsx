@@ -1,5 +1,6 @@
 import React, { useContext } from 'react';
 import { AppContext } from '../../contexts/AppContext';
+import BasicChat from '../apps/BasicChat/BasicChat';
 // import BasicChat from './BasicChat';
 // import FileChat from './FileChat';
 // import WebsiteChat from './WebsiteChat';
@@ -11,13 +12,13 @@ const Dashboard = () => {
     switch (activeApp) {
       case 'chat':
         // return <BasicChat />;
-        return "Basic Chat"
+        return <BasicChat />;
       case 'file-chat':
         // return <FileChat />;
         return "File Chat"
       case 'website-chat':
         return "Website Chat"
-        // return <WebsiteChat />;
+      // return <WebsiteChat />;
       default:
         return (
           <div className="p-6 text-center text-gray-400">
