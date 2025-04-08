@@ -29,9 +29,9 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-white rounded-lg shadow-sm">
+    <>
       {renderActiveApp()}
-    </div>
+    </>
   );
 };
 

@@ -97,10 +97,8 @@ const initAgent = () => {
 
 // IPC to handle user queries
 ipcMain.handle('runQuery', async (event, message:string) => {
-  console.log("message: ", message);
   const humanMessage = new HumanMessage(message)
   const result = await agent.invoke({ messages: [humanMessage] },{ configurable: { thread_id: "1" } });
-  console.log("Agent response:", result);
   return result.messages;
 });
 

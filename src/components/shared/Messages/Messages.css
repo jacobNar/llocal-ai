@@ -1,0 +1,9 @@
+.empty-state h1 {
+    text-align: center;
+    margin-top: 10%;
+}
+
+.messages-container {
+    width: 80%;
+    margin: 0 auto;
+}
