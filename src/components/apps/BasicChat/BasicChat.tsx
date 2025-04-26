@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Messages from '../../shared/Messages/Messages';
 import QueryForm from '../../shared/QueryForm/QueryForm';
-import './BasicChat.css';
+import '../../../index.css';
 
 const BasicChat = () => {
 

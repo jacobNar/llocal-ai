@@ -3,12 +3,13 @@ import { AppProvider } from "./contexts/AppContext"
 import Menu from './components/Menu/Menu';
 import Dashboard from './components/Dashboard/Dashboard';
 
-export { };
+// export { };
 
 declare global {
     interface Window {
         llocalAiApi: {
             runQuery: (message: string) => Promise<any>;
+            webCrawlerTool: (startUrl: string) => Promise<any>;
         };
     }
 }

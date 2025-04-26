@@ -3,7 +3,7 @@ import { AppContext } from '../../contexts/AppContext';
 import BasicChat from '../apps/BasicChat/BasicChat';
 // import BasicChat from './BasicChat';
 // import FileChat from './FileChat';
-// import WebsiteChat from './WebsiteChat';
+import WebsiteChat from '../apps/WebsiteChat/WebsiteChat';
 
 const Dashboard = () => {
   const { activeApp } = useContext(AppContext);
@@ -11,14 +11,12 @@ const Dashboard = () => {
   const renderActiveApp = () => {
     switch (activeApp) {
       case 'chat':
-        // return <BasicChat />;
         return <BasicChat />;
       case 'file-chat':
         // return <FileChat />;
         return "File Chat"
       case 'website-chat':
-        return "Website Chat"
-      // return <WebsiteChat />;
+        return <WebsiteChat />;
       default:
         return (
           <div className="p-6 text-center text-gray-400">
