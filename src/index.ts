@@ -4,10 +4,10 @@ import { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { createReactAgent, ToolNode } from '@langchain/langgraph/prebuilt';
 import type { Document } from '@langchain/core/documents';
-import { MemorySaver } from "@langchain/langgraph";
-import { HumanMessage } from '@langchain/core/messages';
+import { MemorySaver,StateGraph, Annotation, START, END , MessagesAnnotation } from "@langchain/langgraph";
+import { HumanMessage, AIMessage, BaseMessage, ToolMessage } from "@langchain/core/messages";
 import puppeteer from 'puppeteer';
 
 const executablePath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
@@ -65,6 +65,13 @@ app.on('activate', () => {
 
 // Initialize LLM, embeddings, tools, and agent
 const initAgent = () => {
+
+  const AgentState = Annotation.Root({
+    messages: Annotation<BaseMessage[]>({
+      reducer: (x, y) => x.concat(y),
+    }),
+  });
+  
   const llm = new ChatOllama({
     baseUrl: 'http://localhost:11434/',
     model: 'llama3.2',
@@ -80,9 +87,17 @@ const initAgent = () => {
   vectorStore = new MemoryVectorStore(embeddings);
   const memory = new MemorySaver();
 
-  const similaritySearchTool = tool(async ({ query }: { query: string }): Promise<string> => {
+  const similaritySearchTool = tool(async ({ query }: { query: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
+    console.log("tool call id: " + toolCallId)
+    console.log("Similarity search tool called with query: ", query);
     const results: Document[] = await vectorStore.similaritySearch(query, 30);
-    return results.map(r => r.pageContent).join('\n\n');
+    const content =  results.map(r => r.pageContent).join('\n\n');
+    
+    return new ToolMessage({
+      tool_call_id: toolCallId,
+      content,
+    });
+
   }, {
     name: 'Similarity Search Vectorized Websites',
     description: 'Search vector store for relevant content.',
@@ -92,9 +107,44 @@ const initAgent = () => {
   });
 
   const tools = [similaritySearchTool];
-  // const tools = []
 
-  agent = createReactAgent({ llm, tools, checkpointer: memory});
+  const toolNode = new ToolNode<typeof AgentState.State>(tools)
+  const boundModel = llm.bindTools(tools)
+
+    // Define the function that determines whether to continue or not
+  const shouldContinue = ({ messages }: typeof MessagesAnnotation.State) => {
+    console.log("should Continue called");
+    const lastMessage = messages[messages.length - 1] as AIMessage;
+
+    // If the LLM makes a tool call, then we route to the "tools" node
+    if (lastMessage.tool_calls?.length) {
+      return "action";
+    }
+    // Otherwise, we stop (reply to the user) using the special "__end__" node
+    return "__end__";
+  }
+
+  const callModel = async (state: typeof MessagesAnnotation.State) => {
+    console.log("Calling model");
+    const response = await boundModel.invoke(state.messages);
+    return { messages: [response] };
+  }
+
+  // agent = createReactAgent({ llm, tools, checkpointer: memory});
+  const workflow = new StateGraph(AgentState)
+    .addNode("agent", callModel)
+    .addNode("action", toolNode)
+    .addConditionalEdges(
+        "agent",
+        shouldContinue
+    )
+    .addEdge("action", "agent")
+    .addEdge(START, "agent");
+
+
+  agent = workflow.compile({
+      checkpointer: memory,
+  });
   console.log("Agent initialized");
 };
 
@@ -107,7 +157,6 @@ ipcMain.handle('runQuery', async (event, message:string) => {
 
 ipcMain.handle("webCrawlerTool", async (event, url) => {
   const response = await webCrawlerTool(url);
-  console.log("webCrawlerTool response", response)
   const urlPages = Object.values(response)
   const urls = Object.keys(response)
 
