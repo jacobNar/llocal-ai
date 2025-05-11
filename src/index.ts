@@ -8,7 +8,7 @@ import { createReactAgent, ToolNode } from '@langchain/langgraph/prebuilt';
 import type { Document } from '@langchain/core/documents';
 import { MemorySaver,StateGraph, Annotation, START, END , MessagesAnnotation } from "@langchain/langgraph";
 import { HumanMessage, AIMessage, BaseMessage, ToolMessage } from "@langchain/core/messages";
-import puppeteer from 'puppeteer';
+import puppeteer, { Browser } from 'puppeteer';
 
 const executablePath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
@@ -21,6 +21,7 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 //APP GLOBALS
+let browser: Browser;
 let mainWindow: BrowserWindow;
 let vectorStore: MemoryVectorStore;
 let agent: any;
@@ -45,6 +46,7 @@ const createWindow = (): void => {
 
 app.on('ready', () => {
   initAgent();
+  initBrowser();
   createWindow();
 });
 
@@ -99,14 +101,106 @@ const initAgent = () => {
     });
 
   }, {
-    name: 'Similarity Search Vectorized Websites',
-    description: 'Search vector store for relevant content.',
+    name: 'Knowledge base similarity search',
+    description: 'Search vector store with for relevant context to answer the user\'s query using similarity search.',
     schema: z.object({
       query: z.string().describe('Search query'),
     }),
   });
 
-  const tools = [similaritySearchTool];
+  const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
+    console.log("grabbing interactible elements from current page")
+    const pages = await browser.pages();
+    const currentPage = pages[pages.length - 1];
+
+    const content = await currentPage.evaluate(() => {
+      // Find interactive elements and elements with click handlers
+      const baseSelectors = 'a, button, input, textarea, select';
+      const allElements = Array.from(document.querySelectorAll('*'));
+      
+      const interactiveElements = allElements.filter(element => {
+        // Check if element matches our base interactive selectors
+        const isBaseInteractive = element.matches(baseSelectors);
+        
+        // Check if element has click event listeners
+        const hasClickHandler = (element as HTMLElement).onclick || 
+                              element.getAttribute('onclick') ||
+                              element.hasAttribute('ng-click') || // Angular
+                              element.hasAttribute('@click') ||   // Vue
+                              element.hasAttribute('onClick');    // React
+        
+        return isBaseInteractive || hasClickHandler;
+      });
+      
+      return interactiveElements.map(element => {
+        const elementInfo: any = {
+          type: element.tagName.toLowerCase(),
+          text: element.textContent?.trim() || element.getAttribute('placeholder') || element.getAttribute('value') || '',
+        };
+
+        // Add href for links
+        if (element instanceof HTMLAnchorElement && element.href) {
+          elementInfo.href = element.href;
+        }
+
+        // Add id if present
+        if (element.id) {
+          elementInfo.id = element.id;
+        }
+
+        // Add class names if present
+        if (element.className) {
+          elementInfo.classes = element.className;
+        }
+
+        // Add input-specific attributes
+        if (element instanceof HTMLInputElement) {
+          elementInfo.inputType = element.type;
+        }
+
+        // Check for click handlers
+        if ((element as HTMLElement).onclick || 
+            element.getAttribute('onclick') ||
+            element.hasAttribute('ng-click') ||
+            element.hasAttribute('@click') ||
+            element.hasAttribute('onClick')) {
+          elementInfo.hasClickHandler = true;
+        }
+
+        return elementInfo;
+      });
+    });
+  
+    return new ToolMessage({
+      tool_call_id: toolCallId,
+      content: JSON.stringify(content, null, 2),
+    });
+
+  }, {
+    name: 'Get Interactible Elements From Current Webpage',
+    description: 'Returns a list of all interactible elements from the current webpage.',
+    schema: z.undefined()
+  });
+
+  const loadWebpageTool = tool(async ({ url }: { url: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
+    console.log("tool call id: " + toolCallId)
+    const newPage = await browser.newPage()
+    await newPage.goto(url, { waitUntil: 'networkidle2' });
+    
+    return new ToolMessage({
+      tool_call_id: toolCallId,
+      "content": "Webpage loaded successfully. You can now use the 'Get Interactible Elements From Current Webpage' tool to get the interactible elements from the current webpage.",
+    });
+
+  }, {
+    name: 'Load Webpage',
+    description: 'Directs the current browser instance to load a webpage.',
+    schema: z.object({
+      url: z.string().describe('URL of website to load'),
+    }),
+  });
+
+  const tools = [similaritySearchTool, loadWebpageTool, getInteractibleElementsTool];
 
   const toolNode = new ToolNode<typeof AgentState.State>(tools)
   const boundModel = llm.bindTools(tools)
@@ -147,6 +241,11 @@ const initAgent = () => {
   });
   console.log("Agent initialized");
 };
+
+const initBrowser = async () => {
+  browser = await puppeteer.launch({ headless: false, executablePath: executablePath });
+  console.log("chromium started");
+}
 
 // IPC to handle user queries
 ipcMain.handle('runQuery', async (event, message:string) => {
