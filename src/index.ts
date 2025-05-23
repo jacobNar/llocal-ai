@@ -7,8 +7,12 @@ import { z } from 'zod';
 import { createReactAgent, ToolNode } from '@langchain/langgraph/prebuilt';
 import type { Document } from '@langchain/core/documents';
 import { MemorySaver,StateGraph, Annotation, START, END , MessagesAnnotation } from "@langchain/langgraph";
-import { HumanMessage, AIMessage, BaseMessage, ToolMessage } from "@langchain/core/messages";
+import { HumanMessage, AIMessage, BaseMessage, ToolMessage, AIMessageChunk } from "@langchain/core/messages";
 import puppeteer, { Browser } from 'puppeteer';
+import { RunnableConfig } from "@langchain/core/runnables";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import {JsonOutputToolsParser} from "@langchain/core/output_parsers/openai_tools"
 
 const executablePath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
@@ -69,10 +73,19 @@ app.on('activate', () => {
 const initAgent = () => {
 
   const AgentState = Annotation.Root({
-    messages: Annotation<BaseMessage[]>({
+    input: Annotation<string>({
+      reducer: (x, y) => y ?? x ?? "",
+    }),
+    plan: Annotation<string[]>({
+      reducer: (x, y) => y ?? x ?? [],
+    }),
+    pastSteps: Annotation<[string, string][]>({
       reducer: (x, y) => x.concat(y),
     }),
-  });
+    response: Annotation<string>({
+      reducer: (x, y) => y ?? x,
+    }),
+  })
   
   const llm = new ChatOllama({
     baseUrl: 'http://localhost:11434/',
@@ -109,11 +122,12 @@ const initAgent = () => {
   });
 
   const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
-    console.log("grabbing interactible elements from current page")
+    
     const pages = await browser.pages();
     const currentPage = pages[pages.length - 1];
-
-    const content = await currentPage.evaluate(() => {
+    console.log("grabbing interactible elements from current page")
+    try {
+      const content = await currentPage.evaluate(() => {
       // Find interactive elements and elements with click handlers
       const baseSelectors = 'a, button, input, textarea, select';
       const allElements = Array.from(document.querySelectorAll('*'));
@@ -132,6 +146,7 @@ const initAgent = () => {
         return isBaseInteractive || hasClickHandler;
       });
       
+      console.log("Found " + interactiveElements.length + " interactible elements");  
       return interactiveElements.map(element => {
         const elementInfo: any = {
           type: element.tagName.toLowerCase(),
@@ -149,9 +164,9 @@ const initAgent = () => {
         }
 
         // Add class names if present
-        if (element.className) {
-          elementInfo.classes = element.className;
-        }
+        // if (element.className) {
+        //   elementInfo.classes = element.className;
+        // }
 
         // Add input-specific attributes
         if (element instanceof HTMLInputElement) {
@@ -173,12 +188,20 @@ const initAgent = () => {
   
     return new ToolMessage({
       tool_call_id: toolCallId,
-      content: JSON.stringify(content, null, 2),
+      content: "Interactible elements from " + currentPage.url() + ": " +JSON.stringify(content),
     });
+    } catch (error) {
+      console.error("Error in getInteractibleElementsTool:", error);
+      return new ToolMessage({
+        tool_call_id: toolCallId,
+        content: "Error retrieving interactible elements: " + error.message,
+      });
+    }
+    
 
   }, {
     name: 'Get Interactible Elements From Current Webpage',
-    description: 'Returns a list of all interactible elements from the current webpage.',
+    description: 'Returns a list of all interactible elements from the current webpage loaded by the "Load Webpage" tool.',
     schema: z.undefined()
   });
 
@@ -200,45 +223,208 @@ const initAgent = () => {
     }),
   });
 
-  const tools = [similaritySearchTool, loadWebpageTool, getInteractibleElementsTool];
+  const tools = [ loadWebpageTool, getInteractibleElementsTool];
 
-  const toolNode = new ToolNode<typeof AgentState.State>(tools)
-  const boundModel = llm.bindTools(tools)
-
-    // Define the function that determines whether to continue or not
-  const shouldContinue = ({ messages }: typeof MessagesAnnotation.State) => {
-    console.log("should Continue called");
-    const lastMessage = messages[messages.length - 1] as AIMessage;
-
-    // If the LLM makes a tool call, then we route to the "tools" node
-    if (lastMessage.tool_calls?.length) {
-      return "action";
-    }
-    // Otherwise, we stop (reply to the user) using the special "__end__" node
-    return "__end__";
-  }
-
-  const callModel = async (state: typeof MessagesAnnotation.State) => {
-    console.log("Calling model");
-    const response = await boundModel.invoke(state.messages);
-    return { messages: [response] };
-  }
-
-  // agent = createReactAgent({ llm, tools, checkpointer: memory});
-  const workflow = new StateGraph(AgentState)
-    .addNode("agent", callModel)
-    .addNode("action", toolNode)
-    .addConditionalEdges(
-        "agent",
-        shouldContinue
-    )
-    .addEdge("action", "agent")
-    .addEdge(START, "agent");
-
-
-  agent = workflow.compile({
-      checkpointer: memory,
+  const agentExecutor = createReactAgent({
+    llm: new ChatOllama({
+      baseUrl: 'http://localhost:11434/',
+      model: 'llama3.2',
+      temperature: 0,
+      maxRetries: 2,
+    }),
+    checkpointer: memory,
+    prompt: `You are an agent that can only use the provided tools and past conversation results to accomplish tasks. 
+              Do not write or output code. 
+              If you cannot complete a task with the available tools, respond with "I cannot complete this task with the available info, more tool calls may be required."`,
+    tools: tools,
   });
+  // const toolNode = new ToolNode<typeof AgentState.State>(tools)
+  // const boundModel = llm.bindTools(tools)
+
+  //planning step
+
+  const plan = zodToJsonSchema(
+    z.object({
+      steps: z
+        .array(z.string())
+        .describe("different steps to follow, should be in sorted order"),
+    }),
+  );
+  const planFunction = {
+    name: "plan",
+    description: "This tool is used to plan the steps to follow",
+    parameters: plan,
+  };
+
+  const planTool = {
+    type: "function",
+    function: planFunction,
+  };
+
+  const plannerPrompt = ChatPromptTemplate.fromTemplate(
+    `For the given objective, come up with a simple step by step plan. \
+  This plan should involve individual tasks, that if executed correctly will yield the correct answer. Do not add any superfluous steps. \
+  The result of the final step should be the final answer. Make sure that each step has all the information needed - do not skip steps.
+  For any steps including tool calls, specify the inputs to the tools. do not use default values like example.com, only use user provided values for tools calls out outputs of other tools calls or agent calls.
+  DO NOT WRITE CODE. Only use tools that are available to you. \
+  You have a browser instance available to use with the help of the following tools:
+  The 'Load Webpage' which Directs the current browser instance to load a given url, must include input url in step as 'http://....'
+  And the 'Get Interactible Elements From Current Webpage' tool which Returns a list of all interactible elements from the current webpage
+
+  Respond ONLY with valid JSON in the following format:
+  {{ "steps": ["step 1", "step 2", ...] }}
+
+  {objective}`,
+  );
+
+  const model = new ChatOllama({
+    baseUrl: 'http://localhost:11434/',
+    model: 'llama3.2',
+    temperature: 0,
+    maxRetries: 2,
+  })
+
+  const planner = plannerPrompt.pipe(model);
+
+  const response = zodToJsonSchema(
+    z.object({
+      response: z.string().describe("Response to user."),
+    }),
+  );
+
+  const responseTool = {
+    type: "function",
+    function: {
+      name: "response",
+      description: "Responsd to user.",
+      parameters: response,
+    },
+  };
+
+  const replannerPrompt = ChatPromptTemplate.fromTemplate(
+    `For the given objective, assess whether the answer can be returned based on the current plan and the past steps already executed. 
+    If you think the objective can be met with the information gathered from previous steps, call the response tool, otherwise call the plan tool. \
+    IMPORTANT: If you have enough information to answer the user's objective, DO NOT add more steps. Instead, call the 'response' tool with your answer to the user. Only add steps if more actions are needed to reach the answer.
+
+    Respond ONLY with a valid tool call, either:
+    - a 'plan' tool call with steps that still NEED to be done, or
+    - a 'response' tool call with the final answer for the user.
+
+    Format:
+    {{ "steps": ["step 1", "step 2", ...] }}   // if more steps are needed
+    or
+    {{ "response": "your answer to the user" }} // if you can answer now
+
+    Your objective was this:
+    {input}
+
+    Your original plan was this:
+    {plan}
+
+    You have currently done the follow steps:
+    {pastSteps}
+`,
+  );
+
+  const parser = new JsonOutputToolsParser();
+  const replanner = replannerPrompt
+    .pipe(
+        new ChatOllama({
+            baseUrl: 'http://localhost:11434/',
+            model: 'llama3.2',
+            temperature: 0,
+            maxRetries: 2,
+        }).bindTools([
+            planTool,
+            responseTool,
+        ])
+    )
+    .pipe(parser);
+
+  async function executeStep(
+      state: typeof AgentState.State,
+      config?: RunnableConfig,
+    ): Promise<Partial<typeof AgentState.State>> {
+      const task = state.plan[0];
+      const input = {
+        messages: [new HumanMessage(task)],
+      };
+      console.log("Executing task:", task);
+      const result = await agentExecutor.invoke(input, { configurable: { thread_id: "1" } }) as { messages: BaseMessage[] };
+      
+      // Properly type the messages array
+      const messages = result.messages as BaseMessage[];
+      const toolMsg = [...messages].reverse().find((m) => m instanceof ToolMessage); 
+      const content = toolMsg?.content?.toString() ?? messages[messages.length - 1]?.content?.toString() ?? '';
+      console.log("Task result:", content);
+    
+      return {
+        pastSteps: [[task, content]],
+        plan: state.plan.slice(1),
+      };
+  }
+
+  async function planStep(
+    state: typeof AgentState.State,
+  ): Promise<Partial<typeof AgentState.State>> {
+    console.log("Planning step with input:", state.input);  
+    const response = await planner.invoke({ objective: state.input });
+    const content = response.content?.toString() ?? '';
+    const plan = JSON.parse(content);
+    console.log("Raw planner output:", plan);
+    // Defensive: plan may be undefined, or not have steps
+    if (plan && Array.isArray(plan.steps)) {
+      return { plan: plan.steps };
+    }
+    // Fallback: treat the whole plan as a single step if not an array
+    return { plan: [typeof plan === "string" ? plan : JSON.stringify(plan)] };
+  }
+
+  async function replanStep(
+    state: typeof AgentState.State,
+  ): Promise<Partial<typeof AgentState.State>> {
+    console.log("Replanning step with input:", state.input);
+    console.log("Replanning step with plan:", state.plan);
+    console.log("Replanning step with pastSteps:", state.pastSteps);
+    const output: any = await replanner.invoke({
+      input: state.input,
+      plan: state.plan.flat().join("\n\nSTART NEXT STEP:\n"),
+      pastSteps: state.pastSteps
+        .map(([step, result]) => `${step}: ${result}`)
+        .join("\n"),
+    });
+    // console.log("Replanner output:", output);
+    const toolCall = output[0];
+    console.log("Replanner output:", toolCall.args)
+    // console.log("Raw replanner output:", toolCall);
+    if (toolCall.type == "response") {
+      return { response: toolCall.args?.response };
+    }
+
+    return { plan: toolCall.args?.steps };
+  }
+
+  function shouldEnd(state: typeof AgentState.State) {
+    console.log("Should end check with state:", state);
+    return state.response ? "true" : "false";
+  }
+
+  const workflow = new StateGraph(AgentState)
+    .addNode("planner", planStep)
+    .addNode("agent", executeStep)
+    .addNode("replan", replanStep)
+    .addEdge(START, "planner")
+    .addEdge("planner", "agent")
+    .addEdge("agent", "replan")
+    .addConditionalEdges("replan", shouldEnd, {
+      true: END,
+      false: "agent",
+    });
+
+  // Finally, we compile it!
+  // This compiles it into a LangChain Runnable,
+  // meaning you can use it as you would any other runnable
+  agent = workflow.compile();
   console.log("Agent initialized");
 };
 
@@ -249,9 +435,16 @@ const initBrowser = async () => {
 
 // IPC to handle user queries
 ipcMain.handle('runQuery', async (event, message:string) => {
-  const humanMessage = new HumanMessage(message)
-  const result = await agent.invoke({ messages: [humanMessage] },{ configurable: { thread_id: "1" } });
-  return result.messages;
+  try {
+    console.log("runQuery called with message: ", message)
+    // const humanMessage = new HumanMessage(message)
+    const result = await agent.invoke({ input: message }, { configurable: { thread_id: "1" } });
+    return result.messages;
+  }catch (error){
+    console.error("Error in runQuery:", error);
+    return error;
+  }
+  
 });
 
 ipcMain.handle("webCrawlerTool", async (event, url) => {
