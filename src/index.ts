@@ -443,7 +443,8 @@ ipcMain.handle('runQuery', async (event, message:string) => {
     console.log("runQuery called with message: ", message)
     // const humanMessage = new HumanMessage(message)
     const result = await agent.invoke({ input: message }, { configurable: { thread_id: "1" } });
-    return result.messages;
+    
+    return result;
   }catch (error){
     console.error("Error in runQuery:", error);
     return error;

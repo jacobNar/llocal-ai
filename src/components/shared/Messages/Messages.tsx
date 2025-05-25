@@ -1,58 +1,53 @@
 import "./Messages.css";
+
 const Messages = ({ messages }: any) => {
+    const renderPastSteps = (pastSteps: any[]) => (
+        <div className="past-steps">
+            <h5>Past Steps:</h5>
+            <ol>
+                {pastSteps.map(([action, result], idx) => (
+                    <li key={idx}>
+                        <div><strong>Action:</strong> {action}</div>
+                        <div><strong>Result:</strong> {result}</div>
+                    </li>
+                ))}
+            </ol>
+        </div>
+    );
 
-    const getMessageType = (message: any) => {
-        if (message.tool_calls?.length > 0) return 'tool-request';
-        if (message.lc_direct_tool_output) return 'tool-response';
-        if (message.content) return 'message';
-        return 'unknown';
-    };
-
-    const renderMessage = (message: any) => {
-        const type = getMessageType(message);
-
-        switch (type) {
-            case 'tool-request':
-                return (
-                    <div className="tool-request">
-                        <h4>Tool Request:</h4>
-                        {message.tool_calls.map((tool: any, idx: number) => (
-                            <div key={idx} className="tool-call">
-                                <p><strong>Tool:</strong> {tool.name}</p>
-                                <p><strong>Arguments:</strong></p>
-                                <pre>{JSON.stringify(tool.args, null, 2)}</pre>
-                            </div>
+    const renderMessage = (message: any) => (
+        <div className="message-block">
+            <div className="user-input">
+                <strong>User Input:</strong> {message.input}
+            </div>
+            {message.plan && message.plan.length > 0 && (
+                <div className="plan">
+                    <strong>Plan:</strong>
+                    <ul>
+                        {message.plan.map((step: any, idx: number) => (
+                            <li key={idx}>{step}</li>
                         ))}
-                    </div>
-                );
-            case 'tool-response':
-                return (
-                    <div className="tool-response">
-                        <h4>Tool Response:</h4>
-                        <p><strong>Tool:</strong> {message.name}</p>
-                        {message.content && <p>{message.content}</p>}
-                    </div>
-                );
-            case 'message':
-                return (
-                    <div className="content-message">
-                        {message.content}
-                    </div>
-                );
-            default:
-                return <div className="unknown-message">Unknown message type</div>;
-        }
-    };
+                    </ul>
+                </div>
+            )}
+            {message.pastSteps && message.pastSteps.length > 0 && renderPastSteps(message.pastSteps)}
+            {message.response && (
+                <div className="response">
+                    <strong>Response:</strong> {message.response}
+                </div>
+            )}
+        </div>
+    );
 
     return (
         <div className="messages-container">
-            {messages?.length === 0 ? (
+            {(!messages || messages.length === 0) ? (
                 <div className="empty-state">
                     <h1>Start a chat!</h1>
                 </div>
             ) : (
                 messages.map((message: any, index: number) => (
-                    <div key={index} className={`message ${getMessageType(message)}`}>
+                    <div key={index} className="message">
                         {renderMessage(message)}
                     </div>
                 ))

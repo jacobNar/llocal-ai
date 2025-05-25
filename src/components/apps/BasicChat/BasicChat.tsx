@@ -11,7 +11,7 @@ const BasicChat = () => {
         console.log("User query: ", userQuery);
         const response = await window.llocalAiApi.runQuery(userQuery);
         console.log("Response: ", response);
-        setMessages(response);
+        setMessages([...messages, response]);
         return response;
     };
 
