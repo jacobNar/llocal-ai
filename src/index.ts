@@ -295,20 +295,23 @@ const initAgent = () => {
   const responseTool = {
     type: "function",
     function: {
-      name: "response",
-      description: "Responsd to user.",
+      name: "Respond to user",
+      description: "Responsd to user when the answer is in the past steps or provided context.",
       parameters: response,
     },
   };
 
   const replannerPrompt = ChatPromptTemplate.fromTemplate(
-    `For the given objective, assess whether the answer can be returned based on the current plan and the past steps already executed. 
-    If you think the objective can be met with the information gathered from previous steps, call the response tool, otherwise call the plan tool. \
-    IMPORTANT: If you have enough information to answer the user's objective, DO NOT add more steps. Instead, call the 'response' tool with your answer to the user. Only add steps if more actions are needed to reach the answer.
+    `For the given objective, assess whether the objective can be met based on the current plan and the past steps already executed. 
+    If you think the objective can be met with the information gathered from previous steps, call the 'Respond to user' tool, otherwise call the 'plan' tool. \
+    DO NOT ANSWER with inforamtion not provided in this prompt.
+    IMPORTANT: If you have enough information to answer the user's objective, DO NOT add more steps. Instead, call the 'response' tool with your answer to the user. 
+    Only add steps if more actions are needed to reach the answer.
+    If there are still plan steps left, you should call the 'plan' tool with the remaining steps.
 
     Respond ONLY with a valid tool call, either:
     - a 'plan' tool call with steps that still NEED to be done, or
-    - a 'response' tool call with the final answer for the user.
+    - a 'Respond to user' tool call with the final answer for the user.
 
     Format:
     {{ "steps": ["step 1", "step 2", ...] }}   // if more steps are needed
@@ -388,7 +391,7 @@ const initAgent = () => {
     console.log("Replanning step with pastSteps:", state.pastSteps);
     const output: any = await replanner.invoke({
       input: state.input,
-      plan: state.plan.flat().join("\n\nSTART NEXT STEP:\n"),
+      plan: state.plan.flat().join("\n"),
       pastSteps: state.pastSteps
         .map(([step, result]) => `${step}: ${result}`)
         .join("\n"),
@@ -396,8 +399,9 @@ const initAgent = () => {
     // console.log("Replanner output:", output);
     const toolCall = output[0];
     console.log("Replanner output:", toolCall.args)
+    console.log("total replanner value: " + JSON.stringify(toolCall));
     // console.log("Raw replanner output:", toolCall);
-    if (toolCall.type == "response") {
+    if (toolCall.type == "Respond to user") {
       return { response: toolCall.args?.response };
     }
 
