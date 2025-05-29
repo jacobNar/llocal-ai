@@ -87,12 +87,12 @@ const initAgent = () => {
     }),
   })
   
-  const llm = new ChatOllama({
-    baseUrl: 'http://localhost:11434/',
-    model: 'llama3.2',
-    temperature: 0,
-    maxRetries: 2,
-  });
+  // const llm = new ChatOllama({
+  //   baseUrl: 'http://localhost:11434/',
+  //   model: 'llama3.2',
+  //   temperature: 0,
+  //   maxRetries: 2,
+  // });
 
   const embeddings = new OllamaEmbeddings({
     baseUrl: 'http://localhost:11434/',
@@ -145,29 +145,29 @@ const initAgent = () => {
         
         return isBaseInteractive || hasClickHandler;
       });
+
+
+      interactiveElements.forEach((element, index) => {
+        // Only assign if not already present
+        if (!element.hasAttribute('ai-el-id')) {
+          // You can use a counter, timestamp, or random string for uniqueness
+          const uniqueId = `ai-el-${Date.now()}-${index}`;
+          element.setAttribute('ai-el-id', uniqueId);
+        }
+      });
       
       console.log("Found " + interactiveElements.length + " interactible elements");  
       return interactiveElements.map(element => {
         const elementInfo: any = {
           type: element.tagName.toLowerCase(),
           text: element.textContent?.trim() || element.getAttribute('placeholder') || element.getAttribute('value') || '',
+          aiElId: element.getAttribute('ai-el-id') || '',
         };
 
         // Add href for links
         if (element instanceof HTMLAnchorElement && element.href) {
           elementInfo.href = element.href;
         }
-
-        // Add id if present
-        if (element.id) {
-          elementInfo.id = element.id;
-        }
-
-        // Add class names if present
-        // if (element.className) {
-        //   elementInfo.classes = element.className;
-        // }
-
         // Add input-specific attributes
         if (element instanceof HTMLInputElement) {
           elementInfo.inputType = element.type;
@@ -201,7 +201,7 @@ const initAgent = () => {
 
   }, {
     name: 'Get Interactible Elements From Current Webpage',
-    description: 'Returns a list of all interactible elements from the current webpage loaded by the "Load Webpage" tool.',
+    description: 'Returns a list of all interactible elements from the current webpage loaded by the "Load Webpage" tool and assigns a unique ai-el-id attribute to each element.',
     schema: z.undefined()
   });
 
@@ -223,7 +223,43 @@ const initAgent = () => {
     }),
   });
 
-  const tools = [ loadWebpageTool, getInteractibleElementsTool];
+  const clickElementTool = tool(async ({ aiElId }: { aiElId: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
+    console.log("clicking element " + aiElId)
+    const pages = await browser.pages();
+    const currentPage = pages[pages.length - 1];
+    console.log("grabbing interactible elements from current page")
+    try {
+      await currentPage.evaluate((aiElId) => {
+        const element = document.querySelector(`[ai-el-id="${aiElId}"]`);
+        if (element) {
+          (element as HTMLElement).click();
+        } else {
+          throw new Error(`Element with aiElId ${aiElId} not found`);
+        }
+      }, aiElId);
+    } catch (error) {
+      console.error("Error clicking element:", error);
+      return new ToolMessage({
+        tool_call_id: toolCallId,
+        content: "Error clicking element: " + error.message,
+      });
+    }
+    
+
+    return new ToolMessage({
+      tool_call_id: toolCallId,
+      "content": "Element with ID " + aiElId + " clicked successfully.",
+    });
+
+  }, {
+    name: 'Click Element',
+    description: 'Clicks the element with the given aiElId on the current webpage. Should be called after the "Get Interactible Elements From Current Webpage" tool.',
+    schema: z.object({
+      aiElId: z.string().describe('The aiElId of the element to click on'),
+    }),
+  });
+
+  const tools = [ loadWebpageTool, getInteractibleElementsTool, clickElementTool];
 
   const agentExecutor = createReactAgent({
     llm: new ChatOllama({
@@ -270,6 +306,7 @@ const initAgent = () => {
   You have a browser instance available to use with the help of the following tools:
   The 'Load Webpage' which Directs the current browser instance to load a given url, must include input url in step as 'http://....'
   And the 'Get Interactible Elements From Current Webpage' tool which Returns a list of all interactible elements from the current webpage
+  And the 'Click Element' tool which can be used to click a specific element returned by the 'Get Interactible Elements From Current Webpage' tool.
 
   Respond ONLY with valid JSON in the following format:
   {{ "steps": ["step 1", "step 2", ...] }}
@@ -303,11 +340,13 @@ const initAgent = () => {
 
   const replannerPrompt = ChatPromptTemplate.fromTemplate(
     `For the given objective, assess whether the objective can be met based on the current plan and the past steps already executed. 
-    If you think the objective can be met with the information gathered from previous steps, call the 'Respond to user' tool, otherwise call the 'plan' tool. \
+    If you think the objective has been met with the actions taken from previous steps, call the 'Respond to user' tool, otherwise call the 'plan' tool. \
     DO NOT ANSWER with inforamtion not provided in this prompt.
     IMPORTANT: If you have enough information to answer the user's objective, DO NOT add more steps. Instead, call the 'response' tool with your answer to the user. 
     Only add steps if more actions are needed to reach the answer.
-    If there are still plan steps left, you should call the 'plan' tool with the remaining steps.
+    If there are still plan steps left, return the current plan.
+    If you receive an empty plan, that means the current plan has been executed and you need to replan or respond to the user.
+    Do not use placeholder values like <YouTube Link>. Always describe how to extract the required value from previous tool outputs.
 
     Respond ONLY with a valid tool call, either:
     - a 'plan' tool call with steps that still NEED to be done, or
@@ -398,7 +437,6 @@ const initAgent = () => {
     });
     // console.log("Replanner output:", output);
     const toolCall = output[0];
-    console.log("Replanner output:", toolCall.args)
     console.log("total replanner value: " + JSON.stringify(toolCall));
     // console.log("Raw replanner output:", toolCall);
     if (toolCall.type == "Respond to user") {
