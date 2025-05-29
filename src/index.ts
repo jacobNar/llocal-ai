@@ -208,6 +208,19 @@ const initAgent = () => {
   const loadWebpageTool = tool(async ({ url }: { url: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
     console.log("tool call id: " + toolCallId)
     const newPage = await browser.newPage()
+    await newPage.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+    await newPage.evaluateOnNewDocument(() => {
+      delete Object.getPrototypeOf(navigator).webdriver;
+
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+    })
+        
+    
+    // Set referrer
+    const referrer = "https://www.google.com"; // Replace with the desired referrer
+    await newPage.setExtraHTTPHeaders({ Referer: referrer });
     await newPage.goto(url, { waitUntil: 'networkidle2' });
     
     return new ToolMessage({
@@ -305,7 +318,7 @@ const initAgent = () => {
   DO NOT WRITE CODE. Only use tools that are available to you. \
   You have a browser instance available to use with the help of the following tools:
   The 'Load Webpage' which Directs the current browser instance to load a given url, must include input url in step as 'http://....'
-  And the 'Get Interactible Elements From Current Webpage' tool which Returns a list of all interactible elements from the current webpage
+  And the 'Get Interactible Elements From Current Webpage' tool which Returns a list of all interactible elements from the current webpage and assigns a unique ai-el-id attribute to each element needed for the 'Click Element' tool.
   And the 'Click Element' tool which can be used to click a specific element returned by the 'Get Interactible Elements From Current Webpage' tool.
 
   Respond ONLY with valid JSON in the following format:
