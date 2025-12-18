@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain  } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { ChatOllama, OllamaEmbeddings } from '@langchain/ollama';
 import { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
@@ -6,19 +6,20 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { createReactAgent, ToolNode } from '@langchain/langgraph/prebuilt';
 import type { Document } from '@langchain/core/documents';
-import { MemorySaver,StateGraph, Annotation, START, END , MessagesAnnotation } from "@langchain/langgraph";
-import { HumanMessage, AIMessage, BaseMessage, ToolMessage, AIMessageChunk } from "@langchain/core/messages";
+import { MemorySaver, StateGraph, Annotation, START, END, MessagesAnnotation } from "@langchain/langgraph";
+import { BaseMessage, ToolMessage } from "@langchain/core/messages";
 import puppeteer, { Browser } from 'puppeteer';
 import { RunnableConfig } from "@langchain/core/runnables";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
-import {JsonOutputToolsParser} from "@langchain/core/output_parsers/openai_tools"
+import { JsonOutputToolsParser } from "@langchain/core/output_parsers/openai_tools"
 import {
   getInteractibleElementsTool,
   loadWebpageTool,
   clickElementTool,
   setBrowserInstance
 } from './tools/browser-tools';
+import webCrawlerTool from './tools/web-crawler-tools';
 
 const executablePath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
@@ -51,7 +52,7 @@ const createWindow = (): void => {
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
 
   // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools();
 };
 
 app.on('ready', () => {
@@ -92,7 +93,7 @@ const initAgent = () => {
       reducer: (x, y) => y ?? x,
     }),
   })
-  
+
   // const llm = new ChatOllama({
   //   baseUrl: 'http://localhost:11434/',
   //   model: 'llama3.2',
@@ -112,8 +113,8 @@ const initAgent = () => {
     console.log("tool call id: " + toolCallId)
     console.log("Similarity search tool called with query: ", query);
     const results: Document[] = await vectorStore.similaritySearch(query, 30);
-    const content =  results.map(r => r.pageContent).join('\n\n');
-    
+    const content = results.map(r => r.pageContent).join('\n\n');
+
     return new ToolMessage({
       tool_call_id: toolCallId,
       content,
@@ -127,7 +128,7 @@ const initAgent = () => {
     }),
   });
 
-  const tools = [ loadWebpageTool, getInteractibleElementsTool, clickElementTool];
+  const tools = [loadWebpageTool, getInteractibleElementsTool, clickElementTool];
 
   const agentExecutor = createReactAgent({
     llm: new ChatOllama({
@@ -166,15 +167,15 @@ const initAgent = () => {
   };
 
   const plannerPrompt = ChatPromptTemplate.fromTemplate(
-    `For the given objective, come up with a simple step by step plan. \
-  This plan should involve individual tasks, that if executed correctly will yield the correct answer. Do not add any superfluous steps. \
-  The result of the final step should be the final answer. Make sure that each step has all the information needed - do not skip steps.
+    `You are an ai planning agent that has access to a suite of browser tools, you're job is to come up with a simple step by step plan given an objective leveraging the tools. \
+  This plan should involve individual tasks, that if executed correctly will yield the correct result. Do not add any superfluous steps. \
+  The result of the final step should be the final result. Make sure that each step has all the information needed - do not skip steps.
   For any steps including tool calls, specify the inputs to the tools. do not use default values like example.com, only use user provided values for tools calls out outputs of other tools calls or agent calls.
   DO NOT WRITE CODE. Only use tools that are available to you. \
   You have a browser instance available to use with the help of the following tools:
   The 'Load Webpage' which Directs the current browser instance to load a given url, must include input url in step as 'http://....'
   And the 'Get Interactible Elements From Current Webpage' tool which Returns a list of all interactible elements from the current webpage and assigns a unique ai-el-id attribute to each element needed for the 'Click Element' tool.
-  And the 'Click Element' tool which can be used to click a specific element returned by the 'Get Interactible Elements From Current Webpage' tool.
+  And the 'Click Element' tool which can be used to click a specific element with the ai-el-id returned by the 'Get Interactible Elements From Current Webpage' tool.
 
   Respond ONLY with valid JSON in the following format:
   {{ "steps": ["step 1", "step 2", ...] }}
@@ -201,7 +202,7 @@ const initAgent = () => {
     type: "function",
     function: {
       name: "Respond to user",
-      description: "Responsd to user when the answer is in the past steps or provided context.",
+      description: "Respond to user when the the requested steps have been completed in the browser.",
       parameters: response,
     },
   };
@@ -239,45 +240,67 @@ const initAgent = () => {
   const parser = new JsonOutputToolsParser();
   const replanner = replannerPrompt
     .pipe(
-        new ChatOllama({
-            baseUrl: 'http://localhost:11434/',
-            model: 'llama3.2',
-            temperature: 0,
-            maxRetries: 2,
-        }).bindTools([
-            planTool,
-            responseTool,
-        ])
+      new ChatOllama({
+        baseUrl: 'http://localhost:11434/',
+        model: 'llama3.2',
+        temperature: 0,
+        maxRetries: 2,
+      }).bindTools([
+        planTool,
+        responseTool,
+      ])
     )
     .pipe(parser);
 
   async function executeStep(
-      state: typeof AgentState.State,
-      config?: RunnableConfig,
-    ): Promise<Partial<typeof AgentState.State>> {
-      const task = state.plan[0];
+    state: typeof AgentState.State,
+    config?: RunnableConfig,
+  ): Promise<Partial<typeof AgentState.State>> {
+    const task = state.plan[0];
+    try {
+      // Pass the task as the agent input string. Using a raw `messages` array here
+      // caused the LLM adapter to attempt to convert message content and hit
+      // undefined shapes (see stack trace). The React agent expects the simple
+      // input shape for planning/agent invocation.
       const input = {
-        messages: [new HumanMessage(task)],
+        input: task,
       };
       console.log("Executing task:", task);
-      const result = await agentExecutor.invoke(input, { configurable: { thread_id: "1" } }) as { messages: BaseMessage[] };
-      
-      // Properly type the messages array
-      const messages = result.messages as BaseMessage[];
-      const toolMsg = [...messages].reverse().find((m) => m instanceof ToolMessage); 
-      const content = toolMsg?.content?.toString() ?? messages[messages.length - 1]?.content?.toString() ?? '';
-      console.log("Task result:", content);
-    
+      const result = await agentExecutor.invoke(input as unknown as Parameters<typeof agentExecutor.invoke>[0], { configurable: { thread_id: "1" } }) as { messages: BaseMessage[] };
+      console.log("Task result:", result);
+
+      // Check if result.messages exists and is an array
+      if (result.messages && Array.isArray(result.messages)) {
+        // Properly type the messages array
+        const messages = result.messages as BaseMessage[];
+        const toolMsg = [...messages].reverse().find((m) => m instanceof ToolMessage);
+        const content = toolMsg?.content?.toString() ?? messages[messages.length - 1]?.content?.toString() ?? '';
+        // console.log("Task result:", content);
+
+        return {
+          pastSteps: [[task, content]],
+          plan: state.plan.slice(1),
+        };
+      } else {
+        console.error("Error: result.messages is undefined or not an array");
+        return {
+          pastSteps: [[task, "Error: result.messages is undefined or not an array"]],
+          plan: state.plan.slice(1),
+        };
+      }
+    } catch (error) {
+      console.error("Error in executeStep:", error);
       return {
-        pastSteps: [[task, content]],
+        pastSteps: [[task, `Error: ${error instanceof Error ? error.message : String(error)}`]],
         plan: state.plan.slice(1),
       };
+    }
   }
 
   async function planStep(
     state: typeof AgentState.State,
   ): Promise<Partial<typeof AgentState.State>> {
-    console.log("Planning step with input:", state.input);  
+    console.log("Planning step with input:", state.input);
     const response = await planner.invoke({ objective: state.input });
     const content = response.content?.toString() ?? '';
     const plan = JSON.parse(content);
@@ -296,15 +319,16 @@ const initAgent = () => {
     console.log("Replanning step with input:", state.input);
     console.log("Replanning step with plan:", state.plan);
     console.log("Replanning step with pastSteps:", state.pastSteps);
-    const output: any = await replanner.invoke({
+    const output = await replanner.invoke({
       input: state.input,
       plan: state.plan.flat().join("\n"),
       pastSteps: state.pastSteps
         .map(([step, result]) => `${step}: ${result}`)
         .join("\n"),
     });
-    // console.log("Replanner output:", output);
-    const toolCall = output[0];
+    // Normalize output typing from the replanner
+    const typedOutput = output as Array<{ type: string; args?: { response?: string; steps?: string[] } }>;
+    const toolCall = typedOutput[0];
     console.log("total replanner value: " + JSON.stringify(toolCall));
     // console.log("Raw replanner output:", toolCall);
     if (toolCall.type == "Respond to user") {
@@ -314,9 +338,29 @@ const initAgent = () => {
     return { plan: toolCall.args?.steps };
   }
 
-  function shouldEnd(state: typeof AgentState.State) {
-    console.log("Should end check with state:", state);
-    return state.response ? "true" : "false";
+  async function shouldEnd(state: typeof AgentState.State) {
+    // const shouldEnd = state.response ? "true" : "false";
+    // console.log("Should end check with result:", shouldEnd);
+    // return shouldEnd
+    const llm = new ChatOllama({
+      baseUrl: 'http://localhost:11434/',
+      model: 'llama3.2',
+      temperature: 0,
+      maxRetries: 2,
+    });
+
+    const prompt = `You are an expert at determining whether a user's objective has been met.
+    Here is the original objective: ${state.input}
+    Here are the past steps that have been taken: ${state.pastSteps}
+    Based on the above information, has the user's objective been met? Answer "yes" or "no".`;
+
+    const result = await llm.invoke(prompt);
+    const content = result.content.toString().trim().toLowerCase();
+    console.log("Should end check result", content);
+    const shouldEnd = content === "yes";
+
+    console.log("Should end check with result:", shouldEnd);
+    return String(shouldEnd);
   }
 
   const workflow = new StateGraph(AgentState)
@@ -331,9 +375,6 @@ const initAgent = () => {
       false: "agent",
     });
 
-  // Finally, we compile it!
-  // This compiles it into a LangChain Runnable,
-  // meaning you can use it as you would any other runnable
   agent = workflow.compile();
   console.log("Agent initialized");
 };
@@ -345,18 +386,18 @@ const initBrowser = async () => {
 }
 
 // IPC to handle user queries
-ipcMain.handle('runQuery', async (event, message:string) => {
+ipcMain.handle('runQuery', async (event, message: string) => {
   try {
     console.log("runQuery called with message: ", message)
     // const humanMessage = new HumanMessage(message)
     const result = await agent.invoke({ input: message }, { configurable: { thread_id: "1" } });
-    
+
     return result;
-  }catch (error){
+  } catch (error) {
     console.error("Error in runQuery:", error);
     return error;
   }
-  
+
 });
 
 ipcMain.handle("webCrawlerTool", async (event, url) => {
@@ -367,68 +408,9 @@ ipcMain.handle("webCrawlerTool", async (event, url) => {
   urlPages.map(async (urlPage: string, index: number) => {
     const sentences = await textSplitter.splitText(urlPage);
     const documents = sentences.map(sentence => ({
-        pageContent: sentence,
-        metadata: {url: urls[index]}
+      pageContent: sentence,
+      metadata: { url: urls[index] }
     }));
     await vectorStore.addDocuments(documents)
   })
 });
-
-const normalizeUrl = (url: string) => {
-  // Remove protocol (http:// or https://)
-  let normalized = url.replace(/^https?:\/\//, '');
-  // Remove www prefix if present
-  normalized = normalized.replace(/^www\./, '');
-  return normalized;
-};
-
-const webCrawlerTool = async (startUrl: string) => {
-  const browser = await puppeteer.launch({ headless: false, executablePath: executablePath });
-  console.log("chromium started");
-  console.log("new tab");
-  const visited = new Set();
-  const siteContent: Record<string, string> = {};
-  const baseDomain= normalizeUrl(new URL(startUrl).origin);
-  const maxLinks = 10
-
-  const visitPage = async (url: string) => {
-      if (visited.has(url)) return;
-      visited.add(url);
-      const newPage = await browser.newPage();
-      try {
-          await newPage.goto(url, { waitUntil: 'networkidle2' });
-          const content = await newPage.evaluate(() => {
-              document.querySelectorAll('script, style').forEach(el => el.remove());
-              return document.body.innerText.trim();
-          });
-
-          console.log(`Visited ${url}`);
-
-          siteContent[url] = content;
-          
-          const links = await newPage.evaluate(() => 
-              Array.from(document.querySelectorAll('a[href]'))
-                  .map(a => (a as HTMLAnchorElement).href.trim())
-          );
-
-          const filteredLinks = links.filter(link => normalizeUrl(link).startsWith(baseDomain) && !visited.has(link))
-          await Promise.all(filteredLinks.map(link => {
-            if (visited.size < maxLinks) {
-                return visitPage(link);
-            }
-            return Promise.resolve();
-          }));
-      } catch (error) {
-          console.error(`Failed to visit ${url}:`, error);
-      }finally {
-          // Close the individual tab after processing
-          await newPage.close();
-      }
-  };
-
-  await visitPage(startUrl);
-  await browser.close();
-  console.log("chromium closed");
-  // console.log(siteContent)
-  return siteContent;
-}
