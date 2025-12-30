@@ -98,7 +98,7 @@ const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCa
 }, {
   name: 'Get Interactible Elements From Current Webpage',
   description: 'Returns a list of all interactible elements from the current webpage loaded by the "Load Webpage" tool and assigns a unique ai-el-id attribute to each element.',
-  schema: z.undefined()
+  schema: z.object({})
 });
 
 const loadWebpageTool = tool(async ({ url }: { url: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
@@ -230,7 +230,7 @@ const scrollPageTool = tool(async (_: any, { toolCallId }: { toolCallId: string 
 }, {
   name: 'Scroll Page Down',
   description: 'Scrolls the page down by one viewport height to reveal new content. Use this to find more interactible elements if the desired element is not in the current view.',
-  schema: z.undefined(),
+  schema: z.object({}),
 });
 
 export {

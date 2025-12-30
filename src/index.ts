@@ -18,6 +18,7 @@ import {
   typeTextTool,
   scrollPageTool // Added scrollPageTool
 } from './tools/browser-tools';
+import { responseTool } from './tools/response-tool';
 import webCrawlerTool from './tools/web-crawler-tools';
 import { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
@@ -45,8 +46,8 @@ const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 200, chunkO
 const createWindow = (): void => {
   // Create the browser window.
   mainWindow = new BrowserWindow({
-    height: 600,
-    width: 800,
+    height: 1080,
+    width: 1920,
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
     },
@@ -91,7 +92,7 @@ const initAgent = () => {
   vectorStore = new MemoryVectorStore(embeddings);
 
   // Define Tools
-  const tools = [loadWebpageTool, getInteractibleElementsTool, clickElementTool, typeTextTool, scrollPageTool];
+  const tools = [loadWebpageTool, getInteractibleElementsTool, clickElementTool, typeTextTool, scrollPageTool, responseTool];
   const toolsMap = Object.fromEntries(tools.map(t => [t.name, t]));
 
   // Define State
@@ -112,8 +113,10 @@ const initAgent = () => {
     return `**PRIMARY DIRECTIVE:** You are a dedicated, persistent web browsing expert. Your SOLE function is to achieve the user's task using the provided tools. 
 **You must NEVER state that you cannot proceed or lack information.** If you need information, you MUST call the appropriate tool to get it. 
 **NEVER** ask for permission, clarification, or further instructions once the task is started. Do not state you are analyzing or planning. never ask me to review something either.
-**Your output must ONLY be a tool call or the final answer.**
-If the output is a tool call simply return the tool call JSON, DO NOT wrap it in any markdown like \`\`\`json \`\`\` or text.
+**OUTPUT REQUIREMENTS:**
+1. **Your output must ALWAYS be a valid JSON object representing a tool call.**
+2. **Do NOT output any conversational text outside of the JSON.**
+3. **If you have the final answer for the user, you MUST use the 'Response' tool.**
 
 Here's an example of a good tool call output:
 {"name": "Load Webpage", "arguments": {"url": "https://example.com"}}
@@ -125,7 +128,7 @@ Here's an example of a good tool call output:
 1. Always start with 'Load Webpage' to visit the URL if provided.
 2. Call 'Get Interactible Elements From Current Webpage' to see what elements are available to interact with.
 3. Use 'Click Element' to navigate or interact.
-4. Only when the final requested information is in your possession, respond with a final, concise answer.
+4. Only when the final requested information is in your possession, use the 'Response' tool to provide the answer.
 
 **AVAILABLE TOOLS:**
 ${toolsStr}`;
@@ -169,6 +172,8 @@ ${toolsStr}`;
     if (!process.env.HF_TOKEN) {
       console.warn("Missing HF_TOKEN environment variable");
     }
+
+    console.log("Payload Preview:", JSON.stringify(hfMessages[hfMessages.length - 1])); //
 
     const client = new InferenceClient(process.env.HF_TOKEN);
     const model = "Qwen/Qwen2.5-Coder-32B-Instruct";
@@ -279,6 +284,9 @@ ${toolsStr}`;
   const shouldContinue = (state: typeof AgentState.State) => {
     const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
     if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+      if (lastMessage.tool_calls[0].name === "Response") {
+        return END;
+      }
       return "tool";
     }
     return END;
@@ -321,12 +329,21 @@ ipcMain.handle('runQuery', async (event, message: string) => {
     // Extract final response
     const messages = result.messages;
     const lastMsg = messages[messages.length - 1];
+
+    let finalResponse = lastMsg.content;
+    if (lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
+      const lastTool = lastMsg.tool_calls[0];
+      if (lastTool.name === "Response") {
+        finalResponse = lastTool.args.response;
+      }
+    }
+
     return {
       messages: messages.map((m: BaseMessage) => ({
         content: m.content,
         type: m._getType()
       })),
-      final_response: lastMsg.content
+      final_response: finalResponse
     };
 
   } catch (error) {
