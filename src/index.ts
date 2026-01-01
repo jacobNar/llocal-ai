@@ -89,6 +89,9 @@ const initAgent = () => {
     baseUrl: 'http://localhost:11434/',
     model: 'llama3.2',
   });
+
+  const client = new InferenceClient(process.env.HF_TOKEN);
+
   vectorStore = new MemoryVectorStore(embeddings);
 
   // Define Tools
@@ -104,34 +107,15 @@ const initAgent = () => {
 
   // System Prompt Construction
   const getSystemPrompt = () => {
-    let toolsStr = "";
-    tools.forEach(tool => {
-      const schema = zodToJsonSchema(tool.schema as z.ZodType<any>);
-      toolsStr += `Tool: ${tool.name}\nDescription: ${tool.description}\nArguments: ${JSON.stringify(schema)}\n\n`;
-    });
-
     return `**PRIMARY DIRECTIVE:** You are a dedicated, persistent web browsing expert. Your SOLE function is to achieve the user's task using the provided tools. 
-**You must NEVER state that you cannot proceed or lack information.** If you need information, you MUST call the appropriate tool to get it. 
-**NEVER** ask for permission, clarification, or further instructions once the task is started. Do not state you are analyzing or planning. never ask me to review something either.
-**OUTPUT REQUIREMENTS:**
-1. **Your output must ALWAYS be a valid JSON object representing a tool call.**
-2. **Do NOT output any conversational text outside of the JSON.**
-3. **If you have the final answer for the user, you MUST use the 'Response' tool.**
+    **You must NEVER state that you cannot proceed or lack information.** If you need information, you MUST call the appropriate tool to get it. 
+    **NEVER** ask for permission, clarification, or further instructions once the task is started. Do not state you are analyzing or planning. never ask me to review something either.
 
-Here's an example of a good tool call output:
-{"name": "Load Webpage", "arguments": {"url": "https://example.com"}}
-
-**IMPORTANT:** Even if the tool takes no arguments, you MUST use the JSON format with an empty 'arguments' object.
-**IMPORTANT:** The response for a tool call must contain the entire complete JSON of the tool call like above with the "name" and "arguments" keys.
-
-**TASK FLOW:**
-1. Always start with 'Load Webpage' to visit the URL if provided.
-2. Call 'Get Interactible Elements From Current Webpage' to see what elements are available to interact with.
-3. Use 'Click Element' to navigate or interact.
-4. Only when the final requested information is in your possession, use the 'Response' tool to provide the answer.
-
-**AVAILABLE TOOLS:**
-${toolsStr}`;
+    **TASK FLOW:**
+    1. Always start with 'Load Webpage' to visit the URL if provided.
+    2. Call 'Get Interactible Elements From Current Webpage' to see what elements are available to interact with.
+    3. Use 'Click Element' to navigate or interact.
+    4. Only when the final requested information is in your possession, use the 'Response' tool to provide the answer.`;
   };
 
   const callModel = async (state: typeof AgentState.State, config: RunnableConfig) => {
@@ -175,18 +159,51 @@ ${toolsStr}`;
 
     console.log("Payload Preview:", JSON.stringify(hfMessages[hfMessages.length - 1])); //
 
-    const client = new InferenceClient(process.env.HF_TOKEN);
-    const model = "Qwen/Qwen2.5-Coder-32B-Instruct";
+    const model = "meta-llama/Llama-3.1-70B-Instruct";
 
     let content = "";
+    const toolCalls: any[] = [];
+
+    const formattedTools = tools.map((t) => {
+      const jsonSchema = zodToJsonSchema(t.schema as z.ZodType<any>);
+      delete (jsonSchema as any).$schema;
+      return {
+        type: "function",
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: jsonSchema,
+        },
+      };
+    });
+
+    // console.log("Formatted Tools:", JSON.stringify(formattedTools, null, 2));
+
     try {
       const chatCompletion = await client.chatCompletion({
         model: model,
         messages: hfMessages,
         max_tokens: 2048,
         temperature: 0.8,
+        tools: formattedTools,
+        tool_choice: "auto",
       });
-      content = chatCompletion.choices[0].message.content || "";
+
+      const message = chatCompletion.choices[0].message;
+      console.log(JSON.stringify(message))
+      content = message.content || "";
+
+      // Check for native tool calls first
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        message.tool_calls.forEach((tc: any) => {
+          toolCalls.push({
+            name: tc.function.name,
+            args: typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments,
+            id: tc.id || `call_${Date.now()}`
+          });
+        });
+      }
+
     } catch (e) {
       console.error("HF Inference Error:", e);
       content = "Error calling model: " + (e instanceof Error ? e.message : String(e));
@@ -194,37 +211,7 @@ ${toolsStr}`;
 
     console.log("Model response:", content);
 
-    const toolCalls: any[] = [];
-
-    try {
-      const jsonParams = JSON.parse(content);
-      if (jsonParams.name && jsonParams.arguments) {
-        toolCalls.push({
-          name: jsonParams.name,
-          args: jsonParams.arguments,
-          id: `call_${Date.now()}`
-        });
-      }
-    } catch (e) {
-      // If not valid JSON, try extracting it using Regex or look for substrings
-      const jsonMatch = content.match(/\{[\s\S]*"name"[\s\S]*"arguments"[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const jsonParams = JSON.parse(jsonMatch[0]);
-          if (jsonParams.name && jsonParams.arguments) {
-            toolCalls.push({
-              name: jsonParams.name,
-              args: jsonParams.arguments,
-              id: `call_${Date.now()}`
-            });
-          }
-        } catch (innerE) {
-          console.log("Failed to parse extracted JSON");
-        }
-      }
-    }
-
-    console.log("Parsed tool calls:", toolCalls);
+    console.log("tool calls:", toolCalls);
 
     const aiMessage = new AIMessage({
       content: content,
@@ -309,7 +296,12 @@ ${toolsStr}`;
 };
 
 const initBrowser = async () => {
-  browser = await puppeteer.launch({ headless: false, executablePath: executablePath });
+  browser = await puppeteer.launch({
+    headless: false,
+    executablePath: executablePath,
+    defaultViewport: null,
+    args: ['--start-maximized', "--no-sandbox", "--disable-setuid-sandbox"]
+  });
   setBrowserInstance(browser);
   console.log("chromium started");
 }
