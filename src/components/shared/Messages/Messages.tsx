@@ -15,29 +15,27 @@ const Messages = ({ messages }: any) => {
         </div>
     );
 
-    const renderMessage = (message: any) => (
-        <div className="message-block">
-            <div className="user-input">
-                <strong>User Input:</strong> {message.input}
+    const renderMessage = (message: any) => {
+        const role = message.role || 'unknown';
+        const content = message.content || '';
+
+        let label = 'Unknown';
+        if (role === 'user') label = 'User';
+        else if (role === 'assistant') label = 'AI';
+        else if (role === 'system') label = 'System';
+        else if (role === 'tool') label = 'Tool';
+
+        return (
+            <div className={`message-block ${role}`}>
+                <div className="message-header">
+                    <strong>{label}:</strong>
+                </div>
+                <div className="message-content">
+                    {content}
+                </div>
             </div>
-            {message.plan && message.plan.length > 0 && (
-                <div className="plan">
-                    <strong>Plan:</strong>
-                    <ul>
-                        {message.plan.map((step: any, idx: number) => (
-                            <li key={idx}>{step}</li>
-                        ))}
-                    </ul>
-                </div>
-            )}
-            {message.pastSteps && message.pastSteps.length > 0 && renderPastSteps(message.pastSteps)}
-            {message.response && (
-                <div className="response">
-                    <strong>Response:</strong> {message.response}
-                </div>
-            )}
-        </div>
-    );
+        );
+    };
 
     return (
         <div className="messages-container">

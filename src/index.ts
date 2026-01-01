@@ -23,6 +23,7 @@ import webCrawlerTool from './tools/web-crawler-tools';
 import { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { OllamaEmbeddings } from '@langchain/ollama';
+import { DatabaseService } from './services/db'; // Import DB Service
 
 dotenv.config();
 
@@ -41,6 +42,7 @@ let browser: Browser;
 let mainWindow: BrowserWindow;
 let vectorStore: MemoryVectorStore;
 let agent: any;
+let db: DatabaseService; // DB Instance
 const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 200, chunkOverlap: 0 });
 
 const createWindow = (): void => {
@@ -61,6 +63,7 @@ const createWindow = (): void => {
 };
 
 app.on('ready', () => {
+  db = new DatabaseService(); // Initialize DB
   initAgent();
   initBrowser();
   createWindow();
@@ -307,11 +310,20 @@ const initBrowser = async () => {
 }
 
 // IPC to handle user queries
-ipcMain.handle('runQuery', async (event, message: string) => {
+// IPC to handle user queries
+ipcMain.handle('runQuery', async (event, { message, conversationId }: { message: string, conversationId?: string }) => {
   try {
-    console.log("runQuery called with message: ", message)
+    console.log("runQuery called with message: ", message, " conversationId: ", conversationId);
 
-    const config = { configurable: { thread_id: "1" } };
+    // If no conversationId, create new
+    if (!conversationId) {
+      conversationId = db.createConversation(message.substring(0, 30) + "...");
+    }
+
+    // Save user message
+    db.addMessage(conversationId, 'user', message);
+
+    const config = { configurable: { thread_id: conversationId } }; // Use conversationId as thread_id for memory
 
     // Convert string input to HumanMessage
     const result = await agent.invoke({
@@ -330,18 +342,30 @@ ipcMain.handle('runQuery', async (event, message: string) => {
       }
     }
 
+    // Save agent response
+    db.addMessage(conversationId, 'assistant', String(finalResponse));
+
     return {
       messages: messages.map((m: BaseMessage) => ({
         content: m.content,
         type: m._getType()
       })),
-      final_response: finalResponse
+      final_response: finalResponse,
+      conversationId: conversationId // Return ID so frontend can update
     };
 
   } catch (error) {
     console.error("Error in runQuery:", error);
     return error;
   }
+});
+
+ipcMain.handle('getHistory', async () => {
+  return db.getConversations();
+});
+
+ipcMain.handle('loadConversation', async (event, conversationId: string) => {
+  return db.getMessages(conversationId);
 });
 
 // Helper for specialized tools (e.g. web crawler)

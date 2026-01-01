@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('llocalAiApi', {
-  runQuery: (message: string) => ipcRenderer.invoke('runQuery', message),
-  webCrawlerTool: (startUrl:string ) => ipcRenderer.invoke("webCrawlerTool", startUrl)
+  runQuery: (message: string, conversationId?: string) => ipcRenderer.invoke('runQuery', { message, conversationId }),
+  webCrawlerTool: (startUrl: string) => ipcRenderer.invoke("webCrawlerTool", startUrl),
+  getHistory: () => ipcRenderer.invoke('getHistory'),
+  loadConversation: (conversationId: string) => ipcRenderer.invoke('loadConversation', conversationId)
 });

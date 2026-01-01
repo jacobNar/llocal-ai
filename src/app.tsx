@@ -5,12 +5,16 @@ import Dashboard from './components/Dashboard/Dashboard';
 
 // export { };
 
+export interface IElectronAPI {
+    runQuery: (message: string, conversationId?: string) => Promise<any>;
+    webCrawlerTool: (url: string) => Promise<any>;
+    getHistory: () => Promise<any[]>;
+    loadConversation: (id: string) => Promise<any[]>;
+}
+
 declare global {
     interface Window {
-        llocalAiApi: {
-            runQuery: (message: string) => Promise<any>;
-            webCrawlerTool: (startUrl: string) => Promise<any>;
-        };
+        llocalAiApi: IElectronAPI;
     }
 }
 

@@ -2,11 +2,14 @@ import { useContext } from 'react';
 import { AppContext, AppName } from '../../contexts/AppContext';
 import './menu.css';
 
-const recentConversations = [
-  { id: '1', title: 'How to cook pasta' },
-  { id: '2', title: 'React context help' },
-  { id: '3', title: 'Vacation plan' },
-];
+import { useEffect, useState } from 'react';
+
+interface Conversation {
+  id: string;
+  title: string;
+  created_at: number;
+}
+
 
 const apps: { id: AppName; name: string; icon: string }[] = [
   { id: 'chat', name: 'Chat', icon: '💬' },
@@ -19,6 +22,20 @@ const Menu = () => {
   if (!ctx) return null;
 
   const { setCurrentThreadId, setActiveApp, activeApp } = ctx;
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const loadHistory = async () => {
+    try {
+      const history = await window.llocalAiApi.getHistory();
+      setConversations(history);
+    } catch (e) {
+      console.error("Failed to load history", e);
+    }
+  };
 
   const startNewConversation = () => {
     setCurrentThreadId(null); // new thread
@@ -34,8 +51,11 @@ const Menu = () => {
       <div className="recent-convos">
         <h4>Recent</h4>
         <ul>
-          {recentConversations.map((c) => (
-            <li key={c.id} onClick={() => setCurrentThreadId(c.id)}>
+          {conversations.map((c) => (
+            <li key={c.id} onClick={() => {
+              setCurrentThreadId(c.id);
+              setActiveApp('chat');
+            }}>
               {c.title}
             </li>
           ))}

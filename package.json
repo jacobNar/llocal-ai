@@ -27,6 +27,7 @@
     "@electron-forge/plugin-fuses": "^7.8.0",
     "@electron-forge/plugin-webpack": "^7.8.0",
     "@electron/fuses": "^1.8.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
@@ -48,11 +49,13 @@
     "@langchain/core": "^0.3.43",
     "@langchain/langgraph": "^0.2.63",
     "@langchain/ollama": "^0.2.0",
+    "better-sqlite3": "^12.5.0",
     "dotenv": "^17.2.3",
     "electron-squirrel-startup": "^1.0.1",
     "langchain": "^0.3.20",
     "puppeteer": "^24.6.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "sqlite-vec": "^0.1.7-alpha.2"
   }
 }
