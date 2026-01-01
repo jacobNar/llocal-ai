@@ -330,7 +330,6 @@ ipcMain.handle('runQuery', async (event, { message, conversationId }: { message:
       messages: [new HumanMessage(message)]
     }, config);
 
-    // Extract final response
     const messages = result.messages;
     const lastMsg = messages[messages.length - 1];
 
@@ -342,14 +341,49 @@ ipcMain.handle('runQuery', async (event, { message, conversationId }: { message:
       }
     }
 
-    // Save agent response
-    db.addMessage(conversationId, 'assistant', String(finalResponse));
+    const allMessages = result.messages;
+
+    let startIndex = -1;
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+      if (allMessages[i] instanceof HumanMessage && allMessages[i].content === message) {
+        startIndex = i;
+        break;
+      }
+    }
+
+    if (startIndex !== -1) {
+      const newMessages = allMessages.slice(startIndex + 1);
+
+      for (const msg of newMessages) {
+        if (msg instanceof AIMessage) {
+          if (msg.tool_calls && msg.tool_calls.length > 0) {
+            const toolNames = msg.tool_calls.map(tc => tc.name || (tc as any).function?.name || 'Unknown Tool').join(", ");
+            db.addMessage(conversationId, 'assistant', `Executing tool(s): ${toolNames}...`);
+          } else if (msg.content) {
+            db.addMessage(conversationId, 'assistant', msg.content.toString());
+          }
+        } else if (msg instanceof ToolMessage) {
+          db.addMessage(conversationId, 'tool', `Tool Output (${msg.name}): ${msg.content.toString()}`);
+        }
+      }
+    } else {
+      db.addMessage(conversationId, 'assistant', String(finalResponse));
+    }
 
     return {
-      messages: messages.map((m: BaseMessage) => ({
-        content: m.content,
-        type: m._getType()
-      })),
+      messages: messages.map((m: BaseMessage) => {
+        let role = 'unknown';
+        const type = m._getType();
+        if (type === 'human') role = 'user';
+        else if (type === 'ai') role = 'assistant';
+        else if (type === 'system') role = 'system';
+        else if (type === 'tool') role = 'tool';
+
+        return {
+          content: m.content,
+          role: role
+        };
+      }),
       final_response: finalResponse,
       conversationId: conversationId // Return ID so frontend can update
     };

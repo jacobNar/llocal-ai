@@ -13,7 +13,7 @@ export interface Conversation {
 export interface Message {
     id: number;
     conversation_id: string;
-    role: 'user' | 'assistant' | 'system';
+    role: 'user' | 'assistant' | 'system' | 'tool';
     content: string;
     created_at: number;
 }
@@ -82,7 +82,7 @@ export class DatabaseService {
         return id;
     }
 
-    addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string) {
+    addMessage(conversationId: string, role: 'user' | 'assistant' | 'system' | 'tool', content: string) {
         const stmt = this.db.prepare('INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)');
         stmt.run(conversationId, role, content, Date.now());
     }

@@ -1,4 +1,5 @@
 import "./Messages.css";
+import { useState } from "react";
 
 const Messages = ({ messages }: any) => {
     const renderPastSteps = (pastSteps: any[]) => (
@@ -16,6 +17,7 @@ const Messages = ({ messages }: any) => {
     );
 
     const renderMessage = (message: any) => {
+        const [isCollapsed, setIsCollapsed] = useState(true);
         const role = message.role || 'unknown';
         const content = message.content || '';
 
@@ -29,10 +31,21 @@ const Messages = ({ messages }: any) => {
             <div className={`message-block ${role}`}>
                 <div className="message-header">
                     <strong>{label}:</strong>
+                    {role === 'tool' && (
+                        <button
+                            className="collapse-btn"
+                            onClick={() => setIsCollapsed(!isCollapsed)}
+                            style={{ marginLeft: '10px', cursor: 'pointer', background: 'none', border: 'none', color: '#007bff' }}
+                        >
+                            {isCollapsed ? '[Expand]' : '[Collapse]'}
+                        </button>
+                    )}
                 </div>
-                <div className="message-content">
-                    {content}
-                </div>
+                {role === 'tool' ? (
+                    !isCollapsed && <div className="message-content">{content}</div>
+                ) : (
+                    <div className="message-content">{content}</div>
+                )}
             </div>
         );
     };

@@ -47,9 +47,7 @@ const BasicChat = () => {
             if (setCurrentThreadId) setCurrentThreadId(response.conversationId);
         }
         if (response.messages) {
-            const newAiMsg = { content: response.final_response, role: 'assistant' };
-            const newUserMsg = { content: userQuery, role: 'user' };
-            setMessages(prev => [...prev, newUserMsg, newAiMsg]);
+            setMessages(response.messages);
         }
         return response;
     };
