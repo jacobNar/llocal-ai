@@ -25,6 +25,7 @@ import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { OllamaEmbeddings } from '@langchain/ollama';
 import { DatabaseService } from './services/db'; // Import DB Service
 
+
 dotenv.config();
 
 const executablePath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
@@ -43,6 +44,7 @@ let mainWindow: BrowserWindow;
 let vectorStore: MemoryVectorStore;
 let agent: any;
 let db: DatabaseService; // DB Instance
+let verifierClient: InferenceClient; // Global Verifier Client
 const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 200, chunkOverlap: 0 });
 
 const createWindow = (): void => {
@@ -95,6 +97,9 @@ const initAgent = () => {
 
   const client = new InferenceClient(process.env.HF_TOKEN);
 
+
+  verifierClient = new InferenceClient(process.env.HF_TOKEN); // Initialize global verifier client
+
   vectorStore = new MemoryVectorStore(embeddings);
 
   // Define Tools
@@ -105,6 +110,10 @@ const initAgent = () => {
   const AgentState = Annotation.Root({
     messages: Annotation<BaseMessage[]>({
       reducer: (x, y) => x.concat(y),
+    }),
+    isGoalMet: Annotation<boolean>({
+      reducer: (x, y) => y,
+      default: () => false,
     }),
   });
 
@@ -271,26 +280,126 @@ const initAgent = () => {
     }
   };
 
+  const verifyGoal = async (state: typeof AgentState.State) => {
+    const messages = state.messages;
+    const userGoal = messages.find(m => m instanceof HumanMessage)?.content.toString() || "Unknown goal";
+
+    const lastMessage = messages[messages.length - 1];
+    let proposedResponse = "";
+    if (lastMessage instanceof AIMessage) {
+      if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+        const responseTool = lastMessage.tool_calls.find(tc => tc.name === "Response");
+        if (responseTool) {
+          proposedResponse = responseTool.args.response;
+        } else {
+          proposedResponse = "Agent is performing tool calls: " + lastMessage.tool_calls.map(t => t.name).join(", ");
+        }
+      } else {
+        proposedResponse = lastMessage.content.toString();
+      }
+    }
+
+    const verifyPrompt = `
+    You are a strict QA Verifier.
+    Goal: "${userGoal}"
+    
+    Current Progress/Response: "${proposedResponse}"
+    
+    Conversation History:
+    ${messages.map(m => `${m._getType()}: ${m.content.toString().substring(0, 500)}...`).join("\n")}
+    
+    Has the user's goal been FULLY met?
+    Return ONLY a JSON object in this format:
+    {
+      "isGoalMet": boolean,
+      "reason": "Short explanation of why yes or no"
+    }
+    `;
+
+    try {
+
+      const goalSchema = {
+        type: "object",
+        properties: {
+          isGoalMet: { type: "boolean" },
+          reason: { type: "string" }
+        },
+        required: ["isGoalMet", "reason"],
+        additionalProperties: false
+      };
+
+      const response_format = {
+        type: "json_object" as const,
+        value: goalSchema
+      };
+
+
+      const completion = await verifierClient.chatCompletion({
+        model: "Qwen/Qwen2.5-7B-Instruct",
+        messages: [{ role: "user", content: verifyPrompt }],
+        max_tokens: 500,
+        temperature: 0,
+        response_format: response_format
+      });
+
+      const resultText = completion.choices[0].message.content || "{}";
+      let resultJson;
+      try {
+        resultJson = JSON.parse(resultText);
+      } catch (e) {
+        const match = resultText.match(/\{[\s\S]*\}/);
+        if (match) {
+          try { resultJson = JSON.parse(match[0]); } catch (err) { }
+        }
+      }
+
+      if (!resultJson || typeof resultJson.isGoalMet !== 'boolean') {
+        console.warn("Verifier failed to return valid JSON", resultText);
+        return { isGoalMet: false };
+      }
+
+      console.log("Verifier result:", resultJson);
+
+      if (resultJson.isGoalMet) {
+        return { isGoalMet: true };
+      } else {
+        return {
+          isGoalMet: false,
+          messages: [new HumanMessage(`[Verifier Feedback]: The goal is NOT yet met. Reason: ${resultJson.reason}. Please continue trying.`)]
+        };
+      }
+
+    } catch (e) {
+      console.error("Verifier Error:", e);
+      return { isGoalMet: true }; // Fail open to avoid infinite loops if verifier is broken
+    }
+  };
+
   const shouldContinue = (state: typeof AgentState.State) => {
     const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
     if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
       if (lastMessage.tool_calls[0].name === "Response") {
-        return END;
+        return "verifier";
       }
       return "tool";
     }
-    return END;
+    return "verifier"; // Default to verify if no tools called but agent stopped (e.g. plain text)
   };
 
   const workflow = new StateGraph(AgentState)
     .addNode("agent", callModel)
     .addNode("tool", callTool)
+    .addNode("verifier", verifyGoal)
     .addEdge(START, "agent")
     .addConditionalEdges("agent", shouldContinue, {
       tool: "tool",
-      [END]: END
+      verifier: "verifier"
     })
-    .addEdge("tool", "agent");
+    .addEdge("tool", "agent")
+    .addConditionalEdges("verifier", (state) => {
+      if (state.isGoalMet) return END;
+      return "agent";
+    });
 
   // Initialize memory wrapper
   const memory = new MemorySaver();
