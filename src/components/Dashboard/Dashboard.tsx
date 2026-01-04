@@ -4,6 +4,7 @@ import BasicChat from '../apps/BasicChat/BasicChat';
 // import BasicChat from './BasicChat';
 // import FileChat from './FileChat';
 import WebsiteChat from '../apps/WebsiteChat/WebsiteChat';
+import Workflows from '../apps/Workflows/Workflows';
 
 const Dashboard = () => {
   const { activeApp } = useContext(AppContext);
@@ -17,6 +18,8 @@ const Dashboard = () => {
         return "File Chat"
       case 'website-chat':
         return <WebsiteChat />;
+      case 'workflows':
+        return <Workflows />;
       default:
         return (
           <div className="p-6 text-center text-gray-400">

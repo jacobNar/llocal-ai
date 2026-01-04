@@ -11,6 +11,9 @@ export interface IElectronAPI {
     webCrawlerTool: (url: string) => Promise<any>;
     getHistory: () => Promise<any[]>;
     loadConversation: (id: string) => Promise<any[]>;
+    saveWorkflow: (conversationId: string) => Promise<{ success: boolean; id?: string; error?: string; workflow?: any }>;
+    getWorkflows: () => Promise<any[]>;
+    runWorkflow: (workflowId: string) => Promise<{ success: boolean; results?: any[]; error?: string }>;
 }
 
 declare global {

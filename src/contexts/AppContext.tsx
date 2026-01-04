@@ -1,6 +1,6 @@
 import React, { createContext, useState, ReactNode } from 'react';
 
-export type AppName = 'chat' | 'file-chat' | 'website-chat';
+export type AppName = 'chat' | 'file-chat' | 'website-chat' | 'workflows';
 
 interface AppContextType {
   activeApp: AppName;

@@ -46,6 +46,8 @@ let agent: any;
 let db: DatabaseService; // DB Instance
 let verifierClient: InferenceClient; // Global Verifier Client
 const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 200, chunkOverlap: 0 });
+let toolsMap: { [key: string]: any }; // Global tools map
+
 
 const createWindow = (): void => {
   // Create the browser window.
@@ -98,13 +100,15 @@ const initAgent = () => {
   const client = new InferenceClient(process.env.HF_TOKEN);
 
 
-  verifierClient = new InferenceClient(process.env.HF_TOKEN); // Initialize global verifier client
+  verifierClient = new InferenceClient(process.env.HF_TOKEN);
 
   vectorStore = new MemoryVectorStore(embeddings);
 
   // Define Tools
+  // Define Tools
   const tools = [loadWebpageTool, getInteractibleElementsTool, clickElementTool, typeTextTool, scrollPageTool, responseTool];
-  const toolsMap = Object.fromEntries(tools.map(t => [t.name, t]));
+  toolsMap = Object.fromEntries(tools.map(t => [t.name, t]));
+
 
   // Define State
   const AgentState = Annotation.Root({
@@ -132,21 +136,22 @@ const initAgent = () => {
 
   const callModel = async (state: typeof AgentState.State, config: RunnableConfig) => {
     const messages = state.messages;
+    const recentMessages = messages.slice(-10);
     const hfMessages: any[] = [
       { role: "system", content: getSystemPrompt() }
     ];
 
     // Find the last index of the interactible elements tool message
     let lastInteractibleToolIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
+    for (let i = recentMessages.length - 1; i >= 0; i--) {
+      const m = recentMessages[i];
       if (m instanceof ToolMessage && m.name === 'Get Interactible Elements From Current Webpage') {
         lastInteractibleToolIndex = i;
         break;
       }
     }
 
-    messages.forEach((m, index) => {
+    recentMessages.forEach((m, index) => {
       if (m instanceof HumanMessage) {
         hfMessages.push({ role: "user", content: m.content.toString() });
       } else if (m instanceof AIMessage) {
@@ -306,9 +311,12 @@ const initAgent = () => {
     Current Progress/Response: "${proposedResponse}"
     
     Conversation History:
-    ${messages.map(m => `${m._getType()}: ${m.content.toString().substring(0, 500)}...`).join("\n")}
+    ${messages.map(m => `${m._getType()}: ${m.content.toString().substring(0, 1000)}...`).join("\n")}
     
-    Has the user's goal been FULLY met?
+    Has the user's goal been FULLY met based on the "Current Progress/Response"? 
+    If the response contains the answer to the user's question (e.g. a price, a fact, a summary), say YES (true).
+    Ignore the tool outputs in history if the final response has the answer.
+    
     Return ONLY a JSON object in this format:
     {
       "isGoalMet": boolean,
@@ -333,6 +341,7 @@ const initAgent = () => {
         value: goalSchema
       };
 
+      console.log("Verifying with response:", proposedResponse);
 
       const completion = await verifierClient.chatCompletion({
         model: "Qwen/Qwen2.5-7B-Instruct",
@@ -432,7 +441,10 @@ ipcMain.handle('runQuery', async (event, { message, conversationId }: { message:
     // Save user message
     db.addMessage(conversationId, 'user', message);
 
-    const config = { configurable: { thread_id: conversationId } }; // Use conversationId as thread_id for memory
+    const config = {
+      configurable: { thread_id: conversationId },
+      recursionLimit: 50 // Increased limit
+    };
 
     // Convert string input to HumanMessage
     const result = await agent.invoke({
@@ -466,8 +478,16 @@ ipcMain.handle('runQuery', async (event, { message, conversationId }: { message:
       for (const msg of newMessages) {
         if (msg instanceof AIMessage) {
           if (msg.tool_calls && msg.tool_calls.length > 0) {
-            const toolNames = msg.tool_calls.map(tc => tc.name || (tc as any).function?.name || 'Unknown Tool').join(", ");
-            db.addMessage(conversationId, 'assistant', `Executing tool(s): ${toolNames}...`);
+            const toolCalls = msg.tool_calls;
+            const responseTool = toolCalls.find((tc: any) => tc.name === "Response");
+
+            if (responseTool) {
+              const responseContent = JSON.stringify(responseTool.args);
+              db.addMessage(conversationId, 'assistant', responseContent);
+            } else {
+              const toolNames = toolCalls.map((tc: any) => tc.name || (tc as any).function?.name || 'Unknown Tool').join(", ");
+              db.addMessage(conversationId, 'assistant', `Executing tool(s): ${toolNames}...`);
+            }
           } else if (msg.content) {
             db.addMessage(conversationId, 'assistant', msg.content.toString());
           }
@@ -531,4 +551,130 @@ ipcMain.handle("webCrawlerTool", async (event, url) => {
     console.error(e);
     return "Error indexing: " + e;
   }
+
 });
+
+ipcMain.handle("getWorkflows", async () => {
+  return db.getWorkflows();
+});
+
+ipcMain.handle("saveWorkflow", async (event, conversationId: string) => {
+  try {
+    const messages = db.getMessages(conversationId);
+    if (messages.length === 0) return { success: false, error: "No messages found" };
+
+    const history = messages.map(m => `${m.role}: ${m.content}`).join("\n");
+
+    const prompt = `
+        Analyze the following conversation history between a User and an AI Agent.
+        Identify the sequence of SUCCESSFUL tool calls that achieved the user's goal.
+        Ignore tool calls that failed, resulted in errors, or were retries unless they were part of the final successful path.
+        Ignore the final "Response" tool call.
+
+        Generate a concise Title and a short Description for this workflow.
+
+        Return a JSON object in this format:
+        {
+            "title": "Brief Title",
+            "description": "Short description of what this workflow does",
+            "tool_calls": [
+                { "name": "Tool Name", "args": { ...arguments } }
+            ]
+        }
+
+        Conversation History:
+        ${history}
+        `;
+
+    const response_format = {
+      type: "json_object" as const,
+      value: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          description: { type: "string" },
+          tool_calls: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                args: { type: "object" }
+              },
+              required: ["name", "args"]
+            }
+          }
+        },
+        required: ["title", "description", "tool_calls"]
+      }
+    };
+
+    const client = new InferenceClient(process.env.HF_TOKEN);
+
+    const completion = await client.chatCompletion({
+      model: "meta-llama/Llama-3.1-70B-Instruct", // Using generic model for extraction
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 2000,
+      temperature: 0,
+      response_format: response_format
+    });
+
+    const resultText = completion.choices[0].message.content || "{}";
+    let resultJson;
+    try {
+      resultJson = JSON.parse(resultText);
+    } catch (e) {
+      // Fallback regex if needed, but Qwen usually behaves
+      return { success: false, error: "Failed to parse LLM output" };
+    }
+
+    if (!resultJson.tool_calls || !Array.isArray(resultJson.tool_calls)) {
+      return { success: false, error: "Invalid workflow structure generated" };
+    }
+
+    const id = db.createWorkflow(resultJson.title, resultJson.description, JSON.stringify(resultJson.tool_calls));
+    return { success: true, id: id, workflow: resultJson };
+
+  } catch (e) {
+    console.error("Error saving workflow", e);
+    return { success: false, error: String(e) };
+  }
+});
+
+ipcMain.handle("runWorkflow", async (event, workflowId: string) => {
+  try {
+    const workflow = db.getWorkflow(workflowId);
+    if (!workflow) return { success: false, error: "Workflow not found" };
+
+    const toolCalls = JSON.parse(workflow.tool_calls);
+    const results = [];
+
+    for (const call of toolCalls) {
+      const tool = toolsMap[call.name];
+      if (!tool) {
+        results.push({ name: call.name, status: "error", error: "Tool not found" });
+        continue;
+      }
+      try {
+        // Ensure we have a browser instance if needed
+        if (!browser || !browser.isConnected()) {
+          await initBrowser();
+        }
+
+        console.log(`Running workflow tool: ${call.name}`, call.args);
+        const result = await tool.invoke(call.args);
+        results.push({ name: call.name, status: "success", result: result });
+      } catch (e) {
+        results.push({ name: call.name, status: "error", error: String(e) });
+        // Decide if we should stop on error. Usually yes for workflows.
+        break;
+      }
+    }
+    return { success: true, results: results };
+
+  } catch (e) {
+    console.error("Error running workflow", e);
+    return { success: false, error: String(e) };
+  }
+});
+

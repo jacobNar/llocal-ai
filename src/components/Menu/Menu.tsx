@@ -15,6 +15,7 @@ const apps: { id: AppName; name: string; icon: string }[] = [
   { id: 'chat', name: 'Chat', icon: '💬' },
   { id: 'website-chat', name: 'Website Chat', icon: '📝' },
   { id: 'file-chat', name: 'File Chat', icon: '📁' },
+  { id: 'workflows', name: 'Workflows', icon: '⚡' },
 ];
 
 const Menu = () => {

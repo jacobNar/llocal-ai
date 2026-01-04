@@ -18,6 +18,15 @@ export interface Message {
     created_at: number;
 }
 
+export interface Workflow {
+    id: string;
+    title: string;
+    description: string;
+    tool_calls: string; // JSON string
+    created_at: number;
+}
+
+
 export class DatabaseService {
     private db: Database.Database;
 
@@ -68,6 +77,17 @@ export class DatabaseService {
       );
     `);
 
+        this.db.exec(`
+      CREATE TABLE IF NOT EXISTS workflows (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        description TEXT,
+        tool_calls TEXT,
+        created_at INTEGER
+      );
+    `);
+
+
         // Index for faster queries by conversation
         this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id 
@@ -105,5 +125,22 @@ export class DatabaseService {
     updateConversationTitle(conversationId: string, title: string) {
         const stmt = this.db.prepare('UPDATE conversations SET title = ? WHERE id = ?');
         stmt.run(title, conversationId);
+    }
+
+    createWorkflow(title: string, description: string, toolCalls: string): string {
+        const id = require('crypto').randomUUID();
+        const stmt = this.db.prepare('INSERT INTO workflows (id, title, description, tool_calls, created_at) VALUES (?, ?, ?, ?, ?)');
+        stmt.run(id, title, description, toolCalls, Date.now());
+        return id;
+    }
+
+    getWorkflows(): Workflow[] {
+        const stmt = this.db.prepare('SELECT * FROM workflows ORDER BY created_at DESC');
+        return stmt.all() as Workflow[];
+    }
+
+    getWorkflow(id: string): Workflow | undefined {
+        const stmt = this.db.prepare('SELECT * FROM workflows WHERE id = ?');
+        return stmt.get(id) as Workflow | undefined;
     }
 }
