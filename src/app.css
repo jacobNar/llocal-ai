@@ -1,28 +1,79 @@
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
-      Arial, sans-serif;
+        Arial, sans-serif;
     margin: 0;
     padding: 0;
     height: 100vh;
 }
-  
+
+/* Main Dashboard Container */
 .dashboard {
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
-    height: 100%;
-    width: 100%;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    /* Prevent global scroll */
 }
 
-.dashboard > div:nth-of-type(1) {
+.dashboard>.sidebar-container {
     box-sizing: border-box;
     padding: 1%;
-    flex: 0 0 15%;
+    flex: 0 0 250px;
     background: #FAFAFA;
-    border-right: black solid 2px;
+    border-right: 2px solid black;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
-.dashboard div:nth-of-type(2) {
-    flex: 0 0 85%;
+.dashboard.sidebar-closed>.sidebar-container {
+    flex: 0 0 0;
+    width: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+}
+
+/* Main Content Area */
+.dashboard>.main-content {
+    flex: 1;
     background: #FAFAFA;
+    width: 100%;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Sidebar Toggle Buttons */
+.sidebar-toggle-btn {
+    border: 1px solid #ccc;
+    background: white;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    z-index: 10;
+}
+
+.sidebar-toggle-btn.inner {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: transparent;
+    border: none;
+    font-weight: bold;
+}
+
+.sidebar-toggle-btn.floating {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.sidebar-toggle-btn:hover {
+    background: #e0e0e0;
 }

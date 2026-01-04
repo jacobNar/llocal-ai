@@ -1,40 +1,48 @@
 .text-input-form-container {
-    width: 80%;
-    height: 100%;
-    position: relative;
-    margin: 0 auto;
-  }
+  width: 90%;
+  /* Consistent with QueryForm */
+  height: auto;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  /* Vertically center input and button */
+  gap: 12px;
+}
 
-  .text-input {
+.text-input {
+  flex-grow: 1;
+  /* Expand to fill space */
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.4;
+  /* Reduced padding-right since button is outside now */
+}
 
-    padding: 12px 50px 12px 12px;
-    box-sizing: border-box;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.4;
-    overflow-y: auto;
-  }
+.text-input:focus {
+  outline: none;
+  border-color: #4a90e2;
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
 
-  .text-input:focus {
-    outline: none;
-    border-color: #4a90e2;
-    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
-  }
+.submit-button {
+  flex-shrink: 0;
+  /* Don't shrink */
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  /* Adjusted padding */
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  height: 44px;
+  /* Fix height to match common input size */
+}
 
-  .submit-button {
-    position: absolute;
-    bottom: 10px;
-    right: 20px;
-    background-color: #4a90e2;
-    color: white;
-    border: none;
-    padding: 6px 12px;
-    font-size: 14px;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  .submit-button:hover {
-    background-color: #357ab8;
-  }
+.submit-button:hover {
+  background-color: #357ab8;
+}
