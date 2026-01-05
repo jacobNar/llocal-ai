@@ -14,77 +14,106 @@ const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCa
   console.log("grabbing interactible elements from current page")
   try {
     const content = await currentPage.evaluate(() => {
-      // Find interactive elements and elements with click handlers
+      // 0. Get Page Title
+      const pageTitle = document.title;
+
+      // 1. Find interactive elements
       const baseSelectors = 'a, button, input, textarea, select';
+
+      // 2. Find static text context elements
+      const textSelectors = 'h1, h2, h3, h4, h5, h6, p, header, nav, main';
+
       const allElements = Array.from(document.querySelectorAll('*'));
 
       const interactiveElements = allElements.filter(element => {
-        // Check if element matches our base interactive selectors
         const isBaseInteractive = element.matches(baseSelectors);
+        const isTextContext = element.matches(textSelectors);
 
-        // Check if element has click event listeners
+        // Check click handlers
         const hasClickHandler = (element as HTMLElement).onclick ||
           element.getAttribute('onclick') ||
-          element.hasAttribute('ng-click') || // Angular
-          element.hasAttribute('@click') ||   // Vue
-          element.hasAttribute('onClick');    // React
+          element.hasAttribute('ng-click') ||
+          element.hasAttribute('@click') ||
+          element.hasAttribute('onClick');
 
-        if (!isBaseInteractive && !hasClickHandler) return false;
+        if (!isBaseInteractive && !hasClickHandler && !isTextContext) return false;
 
-        // Check if element is in the current viewport
+        // Check viewport visibility
         const rect = element.getBoundingClientRect();
         const inViewport = (
           rect.top >= 0 &&
           rect.left >= 0 &&
-          rect.top < (window.innerHeight || document.documentElement.clientHeight) &&
-          rect.left < (window.innerWidth || document.documentElement.clientWidth)
+          rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+          rect.right <= (window.innerWidth || document.documentElement.clientWidth)
         );
 
-        return inViewport;
-      });
+        if (!inViewport) return false;
 
-
-      interactiveElements.forEach((element, index) => {
-        // Only assign if not already present
-        if (!element.hasAttribute('ai-el-id')) {
-          // You can use a counter, timestamp, or random string for uniqueness
-          const uniqueId = `ai-el-${Date.now()}-${index}`;
-          element.setAttribute('ai-el-id', uniqueId);
+        // For text elements, ensure they have actual content
+        if (isTextContext) {
+          const text = element.textContent?.trim();
         }
+
+        return true;
       });
 
-      console.log("Found " + interactiveElements.length + " interactible elements");
-      return interactiveElements.map(element => {
+      // Helper function to generate a unique selector (XPath)
+      function getUniqueSelector(element: Element): string {
+        // 1. ID
+        if (element.id) {
+          return `//*[@id="${element.id}"]`;
+        }
+        // ... (rest of helper remains same if available in scope, ensuring we include it)
+
+        // 2. Text Content (if unique) - REPEATED for safety in this replace block context
+        const text = element.textContent?.trim();
+        if (text && text.length < 50) {
+          const tag = element.tagName.toLowerCase();
+          const xpath = `//${tag}[contains(text(), "${text.replace(/"/g, '&quot;')}")]`;
+          const snapshot = document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+          if (snapshot.snapshotLength === 1) return xpath;
+        }
+
+        // 3. Fallback: Structural XPath
+        const getPathTo = (el: Element): string => {
+          if (el.id) return `//*[@id="${el.id}"]`;
+          if (el === document.body) return '/html/body';
+          if (!el.parentNode) return '';
+          let ix = 0;
+          const siblings = el.parentNode.childNodes;
+          for (let i = 0; i < siblings.length; i++) {
+            const sibling = siblings[i];
+            if (sibling === el) return getPathTo(el.parentNode as Element) + '/' + el.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+            if (sibling.nodeType === 1 && (sibling as Element).tagName === el.tagName) ix++;
+          }
+          return '';
+        }
+        return getPathTo(element);
+      }
+
+      console.log("Found " + interactiveElements.length + " visible elements");
+      const elementsData = interactiveElements.map(element => {
         const elementInfo: any = {
           type: element.tagName.toLowerCase(),
           text: element.textContent?.trim() || element.getAttribute('placeholder') || element.getAttribute('value') || '',
-          aiElId: element.getAttribute('ai-el-id') || '',
+          selector: getUniqueSelector(element),
         };
 
-        // Add href for links
-        if (element instanceof HTMLAnchorElement && element.href) {
-          elementInfo.href = element.href;
-        }
-        // Add input-specific attributes
-        if (element instanceof HTMLInputElement) {
-          elementInfo.inputType = element.type;
-        }
-
-        // Check for click handlers
-        if ((element as HTMLElement).onclick ||
-          element.getAttribute('onclick') ||
-          element.hasAttribute('ng-click') ||
-          element.hasAttribute('onClick')) {
-          elementInfo.hasClickHandler = true;
-        }
+        if (element instanceof HTMLAnchorElement && element.href) elementInfo.href = element.href;
+        if (element instanceof HTMLInputElement) elementInfo.inputType = element.type;
 
         return elementInfo;
       });
+
+      return {
+        pageTitle,
+        elements: elementsData
+      };
     });
 
     return new ToolMessage({
       tool_call_id: toolCallId,
-      content: "Interactible elements from " + currentPage.url() + ": " + JSON.stringify(content),
+      content: JSON.stringify(content),
     });
   } catch (error) {
     console.error("Error in getInteractibleElementsTool:", error);
@@ -97,7 +126,7 @@ const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCa
 
 }, {
   name: 'Get Interactible Elements From Current Webpage',
-  description: 'Returns a list of all interactible elements from the current webpage loaded by the "Load Webpage" tool and assigns a unique ai-el-id attribute to each element.',
+  description: 'Returns the page title and a list of all interactible and significant text elements (headers, paragraphs) from the current webpage. Use this to analyze the page content and find elements to interact with.',
   schema: z.object({})
 });
 
@@ -132,20 +161,28 @@ const loadWebpageTool = tool(async ({ url }: { url: string }, { toolCallId }: { 
   }),
 });
 
-const clickElementTool = tool(async ({ aiElId }: { aiElId: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
-  console.log("clicking element " + aiElId)
+const clickElementTool = tool(async ({ selector }: { selector: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
+  console.log("clicking element " + selector)
   const pages = await browser.pages();
   const currentPage = pages[pages.length - 1];
-  console.log("grabbing interactible elements from current page")
   try {
-    await currentPage.evaluate((aiElId: string) => {
-      const element = document.querySelector(`[ai-el-id="${aiElId}"]`);
+    await currentPage.evaluate((selector: string) => {
+      let element: Element | null = null;
+      if (selector.startsWith('//') || selector.startsWith('(')) {
+        // XPath
+        const result = document.evaluate(selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        element = result.singleNodeValue as Element;
+      } else {
+        // CSS
+        element = document.querySelector(selector);
+      }
+
       if (element) {
         (element as HTMLElement).click();
       } else {
-        throw new Error(`Element with aiElId ${aiElId} not found`);
+        throw new Error(`Element with selector ${selector} not found`);
       }
-    }, aiElId);
+    }, selector);
   } catch (error) {
     console.error("Error clicking element:", error);
     return new ToolMessage({
@@ -157,25 +194,34 @@ const clickElementTool = tool(async ({ aiElId }: { aiElId: string }, { toolCallI
 
   return new ToolMessage({
     tool_call_id: toolCallId,
-    "content": "Element with ID " + aiElId + " clicked successfully.",
+    "content": "Element with selector " + selector + " clicked successfully.",
   });
 
 }, {
   name: 'Click Element',
-  description: 'Clicks the element with the given aiElId on the current webpage. Should be called after the "Get Interactible Elements From Current Webpage" tool.',
+  description: 'Clicks the element with the given selector on the current webpage. Should be called after the "Get Interactible Elements From Current Webpage" tool.',
   schema: z.object({
-    aiElId: z.string().describe('The aiElId of the element to click on'),
+    selector: z.string().describe('The selector (CSS or XPath) of the element to click on'),
   }),
 });
 
 
-const typeTextTool = tool(async ({ aiElId, text }: { aiElId: string, text: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
-  console.log(`typing "${text}" into element ${aiElId}`)
+const typeTextTool = tool(async ({ selector, text }: { selector: string, text: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
+  console.log(`typing "${text}" into element ${selector}`)
   const pages = await browser.pages();
   const currentPage = pages[pages.length - 1];
 
   try {
-    const element = await currentPage.$(`[ai-el-id="${aiElId}"]`);
+    let element: any;
+    if (selector.startsWith('//') || selector.startsWith('(')) { // Simple XPath check
+      const handle = await currentPage.evaluateHandle((xpath: string) => {
+        return document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      }, selector);
+      element = handle.asElement();
+    } else {
+      element = await currentPage.$(selector);
+    }
+
     if (element) {
       // Clear the field first - often necessary for inputs
       await element.click({ clickCount: 3 }); // Select all
@@ -183,7 +229,7 @@ const typeTextTool = tool(async ({ aiElId, text }: { aiElId: string, text: strin
 
       await element.type(text);
     } else {
-      throw new Error(`Element with aiElId ${aiElId} not found`);
+      throw new Error(`Element with selector ${selector} not found`);
     }
   } catch (error) {
     console.error("Error typing into element:", error);
@@ -195,14 +241,14 @@ const typeTextTool = tool(async ({ aiElId, text }: { aiElId: string, text: strin
 
   return new ToolMessage({
     tool_call_id: toolCallId,
-    "content": `Typed "${text}" into element with ID ${aiElId} successfully.`,
+    "content": `Typed "${text}" into element with selector ${selector} successfully.`,
   });
 
 }, {
   name: 'Type Text',
-  description: 'Types the given text into the element with the given aiElId on the current webpage. Should be called after the "Get Interactible Elements From Current Webpage" tool. Clears existing text before typing.',
+  description: 'Types the given text into the element with the given selector on the current webpage. Should be called after the "Get Interactible Elements From Current Webpage" tool.',
   schema: z.object({
-    aiElId: z.string().describe('The aiElId of the element to type into'),
+    selector: z.string().describe('The selector (CSS or XPath) of the element to type into'),
     text: z.string().describe('The text to type into the element'),
   }),
 });
