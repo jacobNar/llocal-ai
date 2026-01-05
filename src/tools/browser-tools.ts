@@ -43,6 +43,7 @@ const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCa
         pageTitle,
         elements
       }),
+      name: 'Get Interactible Elements From Current Webpage'
     });
 
   } catch (error) {
@@ -50,6 +51,7 @@ const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCa
     return new ToolMessage({
       tool_call_id: toolCallId,
       content: "Error retrieving interactible elements: " + error.message,
+      name: 'Get Interactible Elements From Current Webpage'
     });
   }
 }, {
@@ -78,7 +80,8 @@ const loadWebpageTool = tool(async ({ url }: { url: string }, { toolCallId }: { 
 
   return new ToolMessage({
     tool_call_id: toolCallId,
-    "content": "Webpage loaded successfully. You can now use the 'Get Interactible Elements From Current Webpage' tool to get the interactible elements from the current webpage.",
+    content: "Webpage loaded successfully. You can now use the 'Get Interactible Elements From Current Webpage' tool to get the interactible elements from the current webpage.",
+    name: 'Load Webpage'
   });
 
 }, {
@@ -108,12 +111,14 @@ const clickElementTool = tool(async ({ role, name }: { role: string, name: strin
     return new ToolMessage({
       tool_call_id: toolCallId,
       content: "Error clicking element: " + error.message,
+      name: 'Click Element'
     });
   }
 
   return new ToolMessage({
     tool_call_id: toolCallId,
     content: `Element "${name}" clicked successfully.`,
+    name: 'Click Element'
   });
 
 }, {
@@ -147,12 +152,14 @@ const typeTextTool = tool(async ({ role, name, text }: { role: string, name: str
     return new ToolMessage({
       tool_call_id: toolCallId,
       content: "Error typing into element: " + error.message,
+      name: 'Type Text'
     });
   }
 
   return new ToolMessage({
     tool_call_id: toolCallId,
     content: `Typed "${text}" into element "${name}" successfully.`,
+    name: 'Type Text'
   });
 
 }, {
@@ -178,12 +185,14 @@ const scrollPageTool = tool(async (_: any, { toolCallId }: { toolCallId: string 
     return new ToolMessage({
       tool_call_id: toolCallId,
       content: "Error scrolling page: " + error.message,
+      name: 'Scroll Page Down'
     });
   }
 
   return new ToolMessage({
     tool_call_id: toolCallId,
     content: "Scrolled page down successfully.",
+    name: 'Scroll Page Down'
   });
 }, {
   name: 'Scroll Page Down',
