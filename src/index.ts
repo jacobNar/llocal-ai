@@ -11,6 +11,12 @@ import { registerWorkflowHandlers } from './ipc/workflow-handlers';
 dotenv.config();
 app.commandLine.appendSwitch('remote-debugging-port', '8315');
 app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
+
+// Fix for Raspberry Pi / Linux GPU issues causing blank screens
+if (process.platform === 'linux') {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+}
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
