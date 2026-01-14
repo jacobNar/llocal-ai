@@ -39,10 +39,10 @@ const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCa
 
     return new ToolMessage({
       tool_call_id: toolCallId,
-      content: JSON.stringify({
+      content: {
         pageTitle,
         elements
-      }),
+      } as any,
       name: 'Get Interactible Elements From Current Webpage'
     });
 

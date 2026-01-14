@@ -91,3 +91,7 @@ typings/
 
 # Electron-Forge
 out/
+
+
+nuke_db.ts
+wipe_db.ts

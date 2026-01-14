@@ -144,3 +144,18 @@ export class DatabaseService {
         return stmt.get(id) as Workflow | undefined;
     }
 }
+
+let db: DatabaseService;
+
+export const initDb = () => {
+    if (!db) {
+        db = new DatabaseService();
+        console.log("Database Service initialized");
+    }
+    return db;
+}
+
+export const getDb = () => {
+    if (!db) return initDb();
+    return db;
+}
