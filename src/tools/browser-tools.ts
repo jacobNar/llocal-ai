@@ -1,6 +1,7 @@
 import { ToolMessage } from "@langchain/core/messages";
 import { tool } from "@langchain/core/tools";
-import puppeteer, { Browser } from 'puppeteer';
+import puppeteer, { Browser } from 'puppeteer-core';
+import { BrowserWindow } from 'electron';
 import { z } from "zod";
 let browser: Browser;
 export function setBrowserInstance(instance: Browser) {
@@ -9,7 +10,10 @@ export function setBrowserInstance(instance: Browser) {
 
 const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
   const pages = await browser.pages();
-  const currentPage = pages[pages.length - 1];
+  let currentPage = pages[pages.length - 1];
+
+  const title = await currentPage.title();
+  console.log(`Targeting page with title: ${title}`);
   console.log("grabbing interactible elements from current page via accessibility snapshot");
 
   try {
@@ -60,11 +64,45 @@ const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCa
   schema: z.object({})
 });
 
+const openBrowserWindowTool = tool(async ({ url }: { url: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
+  console.log(`opening new visible browser window for url: ${url}`);
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    show: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    }
+  });
+
+  await win.loadURL(url);
+
+  return new ToolMessage({
+    tool_call_id: toolCallId,
+    content: `Opened new visible browser window for ${url}. Success.`,
+    name: 'Open Browser Window'
+  });
+}, {
+  name: 'Open Browser Window',
+  description: 'Opens a new visible browser window to the specified URL using Electron. Use this to start a browsing session.',
+  schema: z.object({
+    url: z.string().describe('URL of website to load'),
+  }),
+});
+
 const loadWebpageTool = tool(async ({ url }: { url: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
-  console.log("tool call id: " + toolCallId)
-  const newPage = await browser.newPage()
-  await newPage.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
-  await newPage.evaluateOnNewDocument(() => {
+  const pages = await browser.pages();
+
+  let page = pages.length > 0 ? pages[pages.length - 1] : await browser.newPage();
+  const urlLower = page.url();
+  if (urlLower.includes('localhost') && urlLower.includes('index.html')) {
+    console.log("Detected main app window as last page. Creating new page/window instead.");
+    page = await browser.newPage();
+  }
+
+  await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+  await page.evaluateOnNewDocument(() => {
     delete Object.getPrototypeOf(navigator).webdriver;
 
     Object.defineProperty(navigator, 'languages', {
@@ -75,8 +113,8 @@ const loadWebpageTool = tool(async ({ url }: { url: string }, { toolCallId }: { 
 
   // Set referrer
   const referrer = "https://www.google.com"; // Replace with the desired referrer
-  await newPage.setExtraHTTPHeaders({ Referer: referrer });
-  await newPage.goto(url, { waitUntil: 'networkidle2' });
+  await page.setExtraHTTPHeaders({ Referer: referrer });
+  await page.goto(url, { waitUntil: 'networkidle2' });
 
   return new ToolMessage({
     tool_call_id: toolCallId,
@@ -96,6 +134,7 @@ const clickElementTool = tool(async ({ role, name }: { role: string, name: strin
   console.log(`clicking element with role "${role}" and name "${name}"`);
   const pages = await browser.pages();
   const currentPage = pages[pages.length - 1];
+  console.log(`Clicking on page: ${await currentPage.title()}`);
 
   try {
     const selector = `aria/${name}[role="${role}"]`;
@@ -135,6 +174,7 @@ const typeTextTool = tool(async ({ role, name, text }: { role: string, name: str
   console.log(`typing "${text}" into element with role "${role}" and name "${name}"`);
   const pages = await browser.pages();
   const currentPage = pages[pages.length - 1];
+  console.log(`Typing on page: ${await currentPage.title()}`);
 
   try {
     const selector = `aria/${name}[role="${role}"]`;
@@ -175,6 +215,7 @@ const typeTextTool = tool(async ({ role, name, text }: { role: string, name: str
 const scrollPageTool = tool(async (_: any, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
   const pages = await browser.pages();
   const currentPage = pages[pages.length - 1];
+  console.log(`Scrolling page: ${await currentPage.title()}`);
   console.log("scrolling page down");
   try {
     await currentPage.evaluate(() => {
@@ -203,6 +244,7 @@ const scrollPageTool = tool(async (_: any, { toolCallId }: { toolCallId: string 
 export {
   getInteractibleElementsTool,
   loadWebpageTool,
+  openBrowserWindowTool,
   clickElementTool,
   typeTextTool,
   scrollPageTool,

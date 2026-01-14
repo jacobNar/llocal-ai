@@ -9,7 +9,8 @@ import {
     loadWebpageTool,
     clickElementTool,
     typeTextTool,
-    scrollPageTool
+    scrollPageTool,
+    openBrowserWindowTool
 } from '../tools/browser-tools';
 import { responseTool } from '../tools/response-tool';
 
@@ -46,7 +47,7 @@ const getSystemPrompt = () => {
     **NEVER** ask for permission, clarification, or further instructions once the task is started. Do not state you are analyzing or planning. never ask me to review something either.
 
     **TASK FLOW:**
-    1. Always start with 'Load Webpage' to visit the URL if provided.
+    1. Always start with 'Open Browser Window' to create a visible window for the user to see your actions.
     2. Call 'Get Interactible Elements From Current Webpage' to see what elements are available to interact with.
     3. Use 'Click Element' to navigate or interact.
     4. After any interaction, call 'Get Interactible Elements From Current Webpage' to see what elements are available to interact with.
@@ -242,7 +243,7 @@ const callTool = async (state: typeof AgentState.State) => {
                     };
 
                     const filterCompletion = await filterClient.chatCompletion({
-                        model: "meta-llama/Llama-3.1-8B-Instruct",
+                        model: "meta-llama/Llama-3.1-70B-Instruct",
                         messages: [{ role: "user", content: filterPrompt }],
                         max_tokens: 4000,
                         temperature: 0,
@@ -415,7 +416,7 @@ const shouldContinue = (state: typeof AgentState.State) => {
 export const initAgent = () => {
     initClients();
 
-    tools = [loadWebpageTool, getInteractibleElementsTool, clickElementTool, typeTextTool, scrollPageTool, responseTool];
+    tools = [openBrowserWindowTool, loadWebpageTool, getInteractibleElementsTool, clickElementTool, typeTextTool, scrollPageTool, responseTool];
     toolsMap = Object.fromEntries(tools.map(t => [t.name, t]));
 
     const workflow = new StateGraph(AgentState)

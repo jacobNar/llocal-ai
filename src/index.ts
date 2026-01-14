@@ -9,7 +9,8 @@ import { registerToolHandlers } from './ipc/tool-handlers';
 import { registerWorkflowHandlers } from './ipc/workflow-handlers';
 
 dotenv.config();
-
+app.commandLine.appendSwitch('remote-debugging-port', '8315');
+app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
@@ -35,7 +36,6 @@ app.on('ready', () => {
   console.log("App Ready");
   initDb();
   initAgent();
-  initBrowser();
   initRag();
 
   registerChatHandlers();
@@ -43,6 +43,7 @@ app.on('ready', () => {
   registerWorkflowHandlers();
 
   createWindow();
+  initBrowser();
 });
 
 app.on('window-all-closed', () => {
@@ -53,9 +54,6 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   initAgent();
-  // initAgent is idempotent-ish or we can verify if we need to re-init. 
-  // In the original code it was called on activate. 
-
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
