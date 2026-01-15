@@ -19,7 +19,7 @@ export const registerChatHandlers = () => {
 
             const config = {
                 configurable: { thread_id: conversationId },
-                recursionLimit: 50
+                recursionLimit: 100
             };
 
             const result = await agent.invoke({

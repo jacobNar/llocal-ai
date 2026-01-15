@@ -138,7 +138,7 @@ const clickElementTool = tool(async ({ role, name }: { role: string, name: strin
 
   try {
     const selector = `aria/${name}[role="${role}"]`;
-    const element = await currentPage.waitForSelector(selector, { visible: true });
+    const element = await currentPage.waitForSelector(selector, { visible: true, timeout: 3000 });
 
     if (element) {
       await element.click();
@@ -149,7 +149,7 @@ const clickElementTool = tool(async ({ role, name }: { role: string, name: strin
     console.error("Error clicking element:", error);
     return new ToolMessage({
       tool_call_id: toolCallId,
-      content: "Error clicking element: " + error.message,
+      content: "Error clicking element: " + error.message + ". The element might not be on the page anymore. Please run 'Get Interactible Elements' to refresh the page state.",
       name: 'Click Element'
     });
   }
@@ -178,7 +178,7 @@ const typeTextTool = tool(async ({ role, name, text }: { role: string, name: str
 
   try {
     const selector = `aria/${name}[role="${role}"]`;
-    const element = await currentPage.waitForSelector(selector, { visible: true });
+    const element = await currentPage.waitForSelector(selector, { visible: true, timeout: 3000 });
 
     if (element) {
       await element.click({ clickCount: 3 }); // Select all
@@ -191,7 +191,7 @@ const typeTextTool = tool(async ({ role, name, text }: { role: string, name: str
     console.error("Error typing into element:", error);
     return new ToolMessage({
       tool_call_id: toolCallId,
-      content: "Error typing into element: " + error.message,
+      content: "Error typing into element: " + error.message + ". The element might not be on the page anymore. Please run 'Get Interactible Elements' to refresh the page state.",
       name: 'Type Text'
     });
   }

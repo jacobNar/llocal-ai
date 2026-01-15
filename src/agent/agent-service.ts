@@ -57,6 +57,11 @@ const getSystemPrompt = () => {
     1. After typing in a textbox, you will have to submit the form by using the 'Click Element' tool with the submit button.
     2. If you have typed in a text box, no need to call get interactible elements again, simply click the submit button from the last snapshot of the page.
     3. If there are multiple elements with the same role and name, use the 'parentRole' and 'parentName' parameters provided by the 'Get Interactible Elements' tool to specify which one you want. This is more robust than using the index. If no parent is provided, you can fall back to the 'index'.
+
+    **ERROR HANDLING:**
+    1. If a tool call fails (e.g., element not found), **DO NOT** try the exact same action again immediately.
+    2. You **MUST** call 'Get Interactible Elements From Current Webpage' to refresh your view of the page state before trying again. The page might have changed or loaded.
+    3. If multiple attempts fail, try a different strategy (e.g., scroll down, look for alternative links).
     `;
 };
 
@@ -208,14 +213,20 @@ const callTool = async (state: typeof AgentState.State) => {
                     const filterPrompt = `
             You are an intelligent UI element filter.
             User Goal: "${userGoal}"
-            
+
             Available Elements:
             ${JSON.stringify(elements)}
-            
+
             Task: Select ONLY the elements that are relevant to achieving the User Goal. 
             If there are interactible elements like 'button', 'searchbox' etc always include those.
             Include relevant 'link' elements but strip away ones that don't look like they will have the user achieve the goal.
-            Return the result in strictly JSON format.
+            
+            IMPORTANT: You must return the result in strictly JSON format.
+            The output must be a JSON object with a single key "elements" containing the array of selected items.
+            Example: { "elements": [{ "role": "button", "name": "..." }] }
+            DO NOT wrap the output in markdown code blocks (e.g. \`\`\`json).
+            DO NOT include any explanation or extra text.
+            Just return the raw JSON object.
           `;
 
                     const filterSchema = {
@@ -229,7 +240,8 @@ const callTool = async (state: typeof AgentState.State) => {
                                         role: { type: "string" },
                                         name: { type: "string" }
                                     },
-                                    required: ["role", "name"]
+                                    required: ["role", "name"],
+                                    additionalProperties: false
                                 }
                             }
                         },
