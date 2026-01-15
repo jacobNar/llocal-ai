@@ -143,6 +143,18 @@ export class DatabaseService {
         const stmt = this.db.prepare('SELECT * FROM workflows WHERE id = ?');
         return stmt.get(id) as Workflow | undefined;
     }
+
+    deleteConversation(conversationId: string): void {
+        const deleteMessages = this.db.prepare('DELETE FROM messages WHERE conversation_id = ?');
+        const deleteConversation = this.db.prepare('DELETE FROM conversations WHERE id = ?');
+
+        const transaction = this.db.transaction(() => {
+            deleteMessages.run(conversationId);
+            deleteConversation.run(conversationId);
+        });
+
+        transaction();
+    }
 }
 
 let db: DatabaseService;

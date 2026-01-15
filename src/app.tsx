@@ -14,6 +14,7 @@ export interface IElectronAPI {
     saveWorkflow: (conversationId: string) => Promise<{ success: boolean; id?: string; error?: string; workflow?: any }>;
     getWorkflows: () => Promise<any[]>;
     runWorkflow: (workflowId: string) => Promise<{ success: boolean; results?: any[]; error?: string }>;
+    deleteConversation: (conversationId: string) => Promise<{ success: boolean; error?: any }>;
 }
 
 declare global {

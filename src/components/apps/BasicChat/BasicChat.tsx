@@ -3,6 +3,7 @@ import Messages from '../../shared/Messages/Messages';
 import QueryForm from '../../shared/QueryForm/QueryForm';
 import { AppContext } from '../../../contexts/AppContext'; // Corrected Import Path
 import '../../../index.css';
+import './BasicChat.css';
 
 interface ChatMessage {
     role: string;
@@ -16,6 +17,8 @@ const BasicChat = () => {
     const [messages, setMessages] = useState<any[]>([]);
     const [isSaving, setIsSaving] = useState(false);
 
+
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     if (!ctx) return null; // Safe guard
 
@@ -72,6 +75,34 @@ const BasicChat = () => {
         }
     };
 
+    const handleDeleteClick = () => {
+        setShowDeleteConfirm(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!currentThreadId) return;
+        try {
+            const result = await window.llocalAiApi.deleteConversation(currentThreadId);
+            if (result.success) {
+                if (setCurrentThreadId) setCurrentThreadId(null);
+                setMessages([]);
+                alert("Conversation deleted successfully");
+                if (ctx.triggerRefresh) ctx.triggerRefresh();
+            } else {
+                alert(`Failed to delete conversation: ${result.error}`);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error deleting conversation");
+        } finally {
+            setShowDeleteConfirm(false);
+        }
+    };
+
+    const cancelDelete = () => {
+        setShowDeleteConfirm(false);
+    };
+
 
     return (
         <div className='chat-layout'>
@@ -79,16 +110,46 @@ const BasicChat = () => {
                 <Messages messages={messages} />
             </div>
             {currentThreadId && (
-                <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 100 }}>
+                <div className="chat-tools-container">
                     <button
                         onClick={saveWorkflow}
                         disabled={isSaving}
-                        style={{ padding: '5px 10px', background: '#e91e63', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                        className="tool-btn save-workflow-btn"
                     >
                         {isSaving ? 'Saving...' : 'Save Workflow'}
                     </button>
+                    <button
+                        onClick={handleDeleteClick}
+                        className="tool-btn delete-conv-btn"
+                    >
+                        Delete Conversation
+                    </button>
                 </div>
             )}
+
+            {showDeleteConfirm && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <h3 className="modal-title">Delete Conversation?</h3>
+                        <p>Are you sure you want to delete this conversation? This action cannot be undone.</p>
+                        <div className="modal-actions">
+                            <button
+                                onClick={cancelDelete}
+                                className="modal-btn cancel-btn"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                className="modal-btn confirm-delete-btn"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div>
                 <QueryForm onSubmit={(text: string) => runQuery(text)} />
             </div>

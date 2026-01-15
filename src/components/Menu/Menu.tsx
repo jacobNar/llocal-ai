@@ -27,7 +27,7 @@ const Menu = () => {
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [ctx.refreshTrigger]);
 
   const loadHistory = async () => {
     try {

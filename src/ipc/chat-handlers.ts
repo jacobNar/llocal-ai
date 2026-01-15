@@ -110,4 +110,14 @@ export const registerChatHandlers = () => {
     ipcMain.handle('loadConversation', async (event, conversationId: string) => {
         return db.getMessages(conversationId);
     });
+
+    ipcMain.handle('deleteConversation', async (event, conversationId: string) => {
+        try {
+            db.deleteConversation(conversationId);
+            return { success: true };
+        } catch (error) {
+            console.error("Error deleting conversation:", error);
+            return { success: false, error: error };
+        }
+    });
 }

@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('llocalAiApi', {
   loadConversation: (conversationId: string) => ipcRenderer.invoke('loadConversation', conversationId),
   saveWorkflow: (conversationId: string) => ipcRenderer.invoke('saveWorkflow', conversationId),
   getWorkflows: () => ipcRenderer.invoke('getWorkflows'),
-  runWorkflow: (workflowId: string) => ipcRenderer.invoke('runWorkflow', workflowId)
+  runWorkflow: (workflowId: string) => ipcRenderer.invoke('runWorkflow', workflowId),
+  deleteConversation: (conversationId: string) => ipcRenderer.invoke('deleteConversation', conversationId)
 });
