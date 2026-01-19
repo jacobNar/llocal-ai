@@ -39,6 +39,10 @@ export const AgentState = Annotation.Root({
         reducer: (x, y) => x || y,
         default: () => "",
     }),
+    progressSummary: Annotation<string>({
+        reducer: (x, y) => y,
+        default: () => "",
+    }),
 });
 
 const getSystemPrompt = () => {
@@ -67,21 +71,30 @@ const getSystemPrompt = () => {
 
 const callModel = async (state: typeof AgentState.State, config: RunnableConfig) => {
     const messages = state.messages;
-    const recentMessages = messages.slice(-10);
     const hfMessages: any[] = [
         { role: "system", content: getSystemPrompt() }
     ];
 
+    // Add progress summary if available
+    if (state.progressSummary) {
+        hfMessages.push({ 
+            role: "user", 
+            content: `[Progress Summary]\n${state.progressSummary}` 
+        });
+    }
+
+    // Find the last index of 'Get Interactible Elements From Current Webpage'
     let lastInteractibleToolIndex = -1;
-    for (let i = recentMessages.length - 1; i >= 0; i--) {
-        const m = recentMessages[i];
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
         if (m instanceof ToolMessage && m.name === 'Get Interactible Elements From Current Webpage') {
             lastInteractibleToolIndex = i;
             break;
         }
     }
 
-    recentMessages.forEach((m, index) => {
+    // Process all messages, filtering out old 'Get Interactible Elements' calls
+    messages.forEach((m, index) => {
         if (m instanceof HumanMessage) {
             hfMessages.push({ role: "user", content: m.content.toString() });
         } else if (m instanceof AIMessage) {
@@ -98,7 +111,13 @@ const callModel = async (state: typeof AgentState.State, config: RunnableConfig)
         }
     });
 
-    console.log(`Calling model with ${hfMessages.length} messages`);
+    // Add instruction to summarize progress and decide next steps
+    hfMessages.push({
+        role: "user",
+        content: `Please summarize the steps taken so far towards the goal, and then decide what tool to use next or if the goal has been achieved.`
+    });
+
+    console.log(`Calling model with ${hfMessages.length} messages (including ${messages.length} conversation messages)`);
 
     const model = "meta-llama/Llama-3.1-70B-Instruct";
     let content = "";
@@ -154,7 +173,7 @@ const callModel = async (state: typeof AgentState.State, config: RunnableConfig)
         tool_calls: toolCalls
     });
 
-    return { messages: [aiMessage] };
+    return { messages: [aiMessage], progressSummary: content };
 };
 
 const callTool = async (state: typeof AgentState.State) => {
@@ -309,10 +328,9 @@ const callTool = async (state: typeof AgentState.State) => {
 };
 
 const verifyGoal = async (state: typeof AgentState.State) => {
-    const messages = state.messages;
-    const userGoal = messages.find(m => m instanceof HumanMessage)?.content.toString() || "Unknown goal";
-
-    const lastMessage = messages[messages.length - 1];
+    const userGoal = state.userGoal || state.messages.find(m => m instanceof HumanMessage)?.content.toString() || "Unknown goal";
+    const lastMessage = state.messages[state.messages.length - 1];
+    
     let proposedResponse = "";
     if (lastMessage instanceof AIMessage) {
         if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
@@ -328,34 +346,25 @@ const verifyGoal = async (state: typeof AgentState.State) => {
     }
 
     const verifyPrompt = `
-  You are a strict QA Verifier.
-  Goal: "${userGoal}"
-  
-  Current Progress/Response: "${proposedResponse}"
-  
-  Conversation History:
-  ${messages.map(m => {
-        let content = m.content ? m.content.toString() : "";
-        if (m instanceof AIMessage && m.tool_calls && m.tool_calls.length > 0) {
-            const calls = m.tool_calls.map(tc => `${tc.name}(${JSON.stringify(tc.args)})`).join(", ");
-            content += `\n[Agent Tool Calls]: ${calls}`;
-        }
-        return `${m._getType()}: ${content.substring(0, 5000)}`;
-    }).join("\n")}
-  
-  Has the user's goal been FULLY met based on the "Current Progress/Response"? 
-  If the response contains the answer to the user's question (e.g. a price, a fact, a summary), say YES (true) even if the end goal was acheived through different means than specified by the user.
-  Ignore the tool outputs in history if the final response has the answer.
-  
-  Return ONLY a JSON object in this format:
-  {
-    "isGoalMet": boolean,
-    "reason": "Short explanation of why yes or no"
-  }
+You are a strict QA Verifier.
+Goal: "${userGoal}"
+
+Progress So Far:
+${state.progressSummary || "Task just started"}
+
+Current Response/Action: "${proposedResponse}"
+
+Has the user's goal been FULLY met based on the "Current Response/Action"? 
+If the response contains the answer to the user's question (e.g. a price, a fact, a summary), say YES (true) even if the end goal was achieved through different means than specified by the user.
+
+Return ONLY a JSON object in this format:
+{
+  "isGoalMet": boolean,
+  "reason": "Short explanation of why yes or no"
+}
   `;
 
     try {
-
         const goalSchema = {
             type: "object",
             properties: {
