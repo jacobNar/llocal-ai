@@ -5,7 +5,7 @@ import { BaseMessage, ToolMessage, HumanMessage, AIMessage } from "@langchain/co
 import { RunnableConfig } from "@langchain/core/runnables";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import {
-    getInteractibleElementsTool,
+    getElementsTool,
     loadWebpageTool,
     clickElementTool,
     typeTextTool,
@@ -39,10 +39,6 @@ export const AgentState = Annotation.Root({
         reducer: (x, y) => x || y,
         default: () => "",
     }),
-    progressSummary: Annotation<string>({
-        reducer: (x, y) => y,
-        default: () => "",
-    }),
 });
 
 const getSystemPrompt = () => {
@@ -52,72 +48,76 @@ const getSystemPrompt = () => {
 
     **TASK FLOW:**
     1. Always start with 'Open Browser Window' to create a visible window for the user to see your actions.
-    2. Call 'Get Interactible Elements From Current Webpage' to see what elements are available to interact with.
-    3. Use 'Click Element' to navigate or interact.
-    4. After any interaction, call 'Get Interactible Elements From Current Webpage' to see what elements are available to interact with.
+    2. Call 'Get Elements' to see what elements are available to interact with.
+    3. Use 'Click Element' to navigate or interact. **IMPORTANT:** To type into a field, you MUST first 'Click Element' on the input field to focus it, then use 'Type Text'.
+    4. After any interaction, call 'Get Elements' to see what elements are available to interact with.
     5. Only when the final requested information is in your possession, use the 'Response' tool to provide the answer.
 
     **COMMON MISTAKES TO AVOID:**
     1. After typing in a textbox, you will have to submit the form by using the 'Click Element' tool with the submit button.
-    2. If you have typed in a text box, no need to call get interactible elements again, simply click the submit button from the last snapshot of the page.
-    3. If there are multiple elements with the same role and name, use the 'parentRole' and 'parentName' parameters provided by the 'Get Interactible Elements' tool to specify which one you want. This is more robust than using the index. If no parent is provided, you can fall back to the 'index'.
+    2. If you have typed in a text box, no need to call Get Elements again, simply click the submit button from the last snapshot of the page.
+    3. **CRITICAL:** When using 'Click Element', you MUST use the **EXACT** 'name' and 'role' from the 'Get Elements' output. Do not truncate, summarize, or alter the name (e.g., if the name is "Search Amazon", do NOT use "Search").
+    4. If there are multiple elements with the same role and name, use the 'parentRole' and 'parentName' parameters provided by the 'Get Elements' tool to specify which one you want. This is more robust than using the index. If no parent is provided, you can fall back to the 'index'.
 
     **ERROR HANDLING:**
     1. If a tool call fails (e.g., element not found), **DO NOT** try the exact same action again immediately.
-    2. You **MUST** call 'Get Interactible Elements From Current Webpage' to refresh your view of the page state before trying again. The page might have changed or loaded.
+    2. You **MUST** call 'Get Elements' to refresh your view of the page state before trying again. The page might have changed or loaded.
     3. If multiple attempts fail, try a different strategy (e.g., scroll down, look for alternative links).
     `;
 };
 
 const callModel = async (state: typeof AgentState.State, config: RunnableConfig) => {
-    const messages = state.messages;
+    const allMessages = state.messages;
+
+    const messagesToProcess = allMessages.slice(-10);
+
+    const userGoal = state.userGoal || state.messages.find(m => m instanceof HumanMessage)?.content.toString() || "Unknown Goal";
+
     const hfMessages: any[] = [
-        { role: "system", content: getSystemPrompt() }
+        { role: "system", content: getSystemPrompt() },
+        { role: "user", content: `User Goal: ${userGoal}` }
     ];
 
-    // Add progress summary if available
-    if (state.progressSummary) {
-        hfMessages.push({ 
-            role: "user", 
-            content: `[Progress Summary]\n${state.progressSummary}` 
-        });
-    }
-
-    // Find the last index of 'Get Interactible Elements From Current Webpage'
-    let lastInteractibleToolIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-        const m = messages[i];
-        if (m instanceof ToolMessage && m.name === 'Get Interactible Elements From Current Webpage') {
-            lastInteractibleToolIndex = i;
+    let lastGetElementsMessage: ToolMessage | null = null;
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+        if (allMessages[i] instanceof ToolMessage && allMessages[i].name === 'Get Elements') {
+            lastGetElementsMessage = allMessages[i] as ToolMessage;
             break;
         }
     }
 
-    // Process all messages, filtering out old 'Get Interactible Elements' calls
-    messages.forEach((m, index) => {
+    const isLastGetElementsInWindow = messagesToProcess.some(m => m === lastGetElementsMessage);
+
+    if (lastGetElementsMessage && !isLastGetElementsInWindow) {
+        const contentStr = typeof lastGetElementsMessage.content === 'string' ? lastGetElementsMessage.content : JSON.stringify(lastGetElementsMessage.content);
+        hfMessages.push({
+            role: "user",
+            content: `[Context - Last Known Page State]\n(from previous turn)\n${contentStr}`
+        });
+    }
+
+    // Process window messages
+    messagesToProcess.forEach((m, index) => {
         if (m instanceof HumanMessage) {
             hfMessages.push({ role: "user", content: m.content.toString() });
         } else if (m instanceof AIMessage) {
-            hfMessages.push({ role: "assistant", content: m.content.toString() });
+            const content = m.content.toString() || (m.tool_calls && m.tool_calls.length > 0 ? `[Tool Call: ${m.tool_calls.map((t: any) => t.name).join(", ")}]` : "");
+            hfMessages.push({ role: "assistant", content: content });
         } else if (m instanceof ToolMessage) {
             const contentStr = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-            if (m.name === 'Get Interactible Elements From Current Webpage') {
-                if (index === lastInteractibleToolIndex) {
+
+            if (m.name === 'Get Elements') {
+                if (m === lastGetElementsMessage) {
                     hfMessages.push({ role: "user", content: contentStr });
+                } else {
+                    hfMessages.push({ role: "user", content: `[Old Tool Output Truncated] Elements from previous state.` });
                 }
             } else {
-                hfMessages.push({ role: "user", content: `Tool Output: ${contentStr}` });
+                hfMessages.push({ role: "user", content: `Tool "${m.name}" Output: ${contentStr}` });
             }
         }
     });
 
-    // Add instruction to summarize progress and decide next steps
-    hfMessages.push({
-        role: "user",
-        content: `Please summarize the steps taken so far towards the goal, and then decide what tool to use next or if the goal has been achieved.`
-    });
-
-    console.log(`Calling model with ${hfMessages.length} messages (including ${messages.length} conversation messages)`);
 
     const model = "meta-llama/Llama-3.1-70B-Instruct";
     let content = "";
@@ -141,7 +141,7 @@ const callModel = async (state: typeof AgentState.State, config: RunnableConfig)
             model: model,
             messages: hfMessages,
             max_tokens: 2048,
-            temperature: 0.8,
+            temperature: 0.1,
             tools: formattedTools,
             tool_choice: "auto",
         });
@@ -173,7 +173,9 @@ const callModel = async (state: typeof AgentState.State, config: RunnableConfig)
         tool_calls: toolCalls
     });
 
-    return { messages: [aiMessage], progressSummary: content };
+    return {
+        messages: [aiMessage]
+    };
 };
 
 const callTool = async (state: typeof AgentState.State) => {
@@ -205,9 +207,9 @@ const callTool = async (state: typeof AgentState.State) => {
             content = typeof result === 'string' ? result : JSON.stringify(result);
         }
 
-        if (toolCall.name === 'Get Interactible Elements From Current Webpage') {
+        if (toolCall.name === 'Get Elements') {
             const userGoal = state.userGoal || state.messages.find(m => m instanceof HumanMessage)?.content.toString() || "Unknown Goal";
-            console.log("Filtering getInteractibleElements with goal:", userGoal);
+            console.log("Filtering getElements with goal:", userGoal);
 
             try {
                 const originalJson = typeof content === 'string' ? JSON.parse(content) : content;
@@ -239,7 +241,7 @@ const callTool = async (state: typeof AgentState.State) => {
             Task: Select ONLY the elements that are relevant to achieving the User Goal. 
             If there are interactible elements like 'button', 'searchbox' etc always include those.
             Include relevant 'link' elements but strip away ones that don't look like they will have the user achieve the goal.
-            
+
             IMPORTANT: You must return the result in strictly JSON format.
             The output must be a JSON object with a single key "elements" containing the array of selected items.
             Example: { "elements": [{ "role": "button", "name": "..." }] }
@@ -330,7 +332,7 @@ const callTool = async (state: typeof AgentState.State) => {
 const verifyGoal = async (state: typeof AgentState.State) => {
     const userGoal = state.userGoal || state.messages.find(m => m instanceof HumanMessage)?.content.toString() || "Unknown goal";
     const lastMessage = state.messages[state.messages.length - 1];
-    
+
     let proposedResponse = "";
     if (lastMessage instanceof AIMessage) {
         if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
@@ -348,9 +350,6 @@ const verifyGoal = async (state: typeof AgentState.State) => {
     const verifyPrompt = `
 You are a strict QA Verifier.
 Goal: "${userGoal}"
-
-Progress So Far:
-${state.progressSummary || "Task just started"}
 
 Current Response/Action: "${proposedResponse}"
 
@@ -431,13 +430,14 @@ const shouldContinue = (state: typeof AgentState.State) => {
         }
         return "tool";
     }
-    return "verifier";
+    // If no tool calls, loop back to agent to try again (force tool call via system prompt/iteration)
+    return "agent";
 };
 
 export const initAgent = () => {
     initClients();
 
-    tools = [openBrowserWindowTool, loadWebpageTool, getInteractibleElementsTool, clickElementTool, typeTextTool, scrollPageTool, responseTool];
+    tools = [openBrowserWindowTool, loadWebpageTool, getElementsTool, clickElementTool, typeTextTool, scrollPageTool, responseTool];
     toolsMap = Object.fromEntries(tools.map(t => [t.name, t]));
 
     const workflow = new StateGraph(AgentState)
@@ -447,7 +447,8 @@ export const initAgent = () => {
         .addEdge(START, "agent")
         .addConditionalEdges("agent", shouldContinue, {
             tool: "tool",
-            verifier: "verifier"
+            verifier: "verifier",
+            agent: "agent"
         })
         .addEdge("tool", "agent")
         .addConditionalEdges("verifier", (state) => {

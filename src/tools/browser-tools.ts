@@ -8,7 +8,7 @@ export function setBrowserInstance(instance: Browser) {
   browser = instance;
 }
 
-const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
+const getElementsTool = tool(async (_: any, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
   const pages = await browser.pages();
   let currentPage = pages[pages.length - 1];
 
@@ -47,20 +47,20 @@ const getInteractibleElementsTool = tool(async (_: any, { toolCallId }: { toolCa
         pageTitle,
         elements
       } as any,
-      name: 'Get Interactible Elements From Current Webpage'
+      name: 'Get Elements'
     });
 
   } catch (error) {
-    console.error("Error in getInteractibleElementsTool:", error);
+    console.error("Error in getElementsTool:", error);
     return new ToolMessage({
       tool_call_id: toolCallId,
       content: "Error retrieving interactible elements: " + error.message,
-      name: 'Get Interactible Elements From Current Webpage'
+      name: 'Get Elements'
     });
   }
 }, {
-  name: 'Get Interactible Elements From Current Webpage',
-  description: 'Returns the page title and a list of interactible elements (role and name) from the current webpage using the accessibility tree. Use this to find elements to interact with.',
+  name: 'Get Elements',
+  description: 'Returns the page title and a list of elements (role and name) from the current webpage using the accessibility tree. Use this to find elements to interact with.',
   schema: z.object({})
 });
 
@@ -118,7 +118,7 @@ const loadWebpageTool = tool(async ({ url }: { url: string }, { toolCallId }: { 
 
   return new ToolMessage({
     tool_call_id: toolCallId,
-    content: "Webpage loaded successfully. You can now use the 'Get Interactible Elements From Current Webpage' tool to get the interactible elements from the current webpage.",
+    content: "Webpage loaded successfully. You can now use the 'Get Elements' tool to get the interactible elements from the current webpage.",
     name: 'Load Webpage'
   });
 
@@ -149,7 +149,7 @@ const clickElementTool = tool(async ({ role, name }: { role: string, name: strin
     console.error("Error clicking element:", error);
     return new ToolMessage({
       tool_call_id: toolCallId,
-      content: "Error clicking element: " + error.message + ". The element might not be on the page anymore. Please run 'Get Interactible Elements' to refresh the page state.",
+      content: "Error clicking element: " + error.message + ". The element might not be on the page anymore. Please run 'Get Elements' to refresh the page state.",
       name: 'Click Element'
     });
   }
@@ -162,7 +162,7 @@ const clickElementTool = tool(async ({ role, name }: { role: string, name: strin
 
 }, {
   name: 'Click Element',
-  description: 'Clicks the element identified by its accessibility role and name. Should be called after the "Get Interactible Elements From Current Webpage" tool.',
+  description: 'Clicks the element identified by its accessibility role and name. Should be called after the "Get Elements" tool. Use this to focus on an element (like a search box) before typing.',
   schema: z.object({
     role: z.string().describe('The accessibility role of the element (e.g., "button", "link", "searchbox")'),
     name: z.string().describe('The accessible name of the element'),
@@ -170,44 +170,34 @@ const clickElementTool = tool(async ({ role, name }: { role: string, name: strin
 });
 
 
-const typeTextTool = tool(async ({ role, name, text }: { role: string, name: string, text: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
-  console.log(`typing "${text}" into element with role "${role}" and name "${name}"`);
+const typeTextTool = tool(async ({ text }: { text: string }, { toolCallId }: { toolCallId: string }): Promise<ToolMessage> => {
+  console.log(`typing "${text}"`);
   const pages = await browser.pages();
   const currentPage = pages[pages.length - 1];
   console.log(`Typing on page: ${await currentPage.title()}`);
 
   try {
-    const selector = `aria/${name}[role="${role}"]`;
-    const element = await currentPage.waitForSelector(selector, { visible: true, timeout: 3000 });
-
-    if (element) {
-      await element.click({ clickCount: 3 }); // Select all
-      await element.press('Backspace');    // Delete
-      await element.type(text);
-    } else {
-      throw new Error(`Element with role "${role}" and name "${name}" not found`);
-    }
+    await currentPage.keyboard.type(text);
+    // await currentPage.keyboard.press('Enter');
   } catch (error) {
-    console.error("Error typing into element:", error);
+    console.error("Error typing:", error);
     return new ToolMessage({
       tool_call_id: toolCallId,
-      content: "Error typing into element: " + error.message + ". The element might not be on the page anymore. Please run 'Get Interactible Elements' to refresh the page state.",
+      content: "Error typing: " + error.message,
       name: 'Type Text'
     });
   }
 
   return new ToolMessage({
     tool_call_id: toolCallId,
-    content: `Typed "${text}" into element "${name}" successfully.`,
+    content: `Typed "${text}" successfully into the focused element.`,
     name: 'Type Text'
   });
 
 }, {
   name: 'Type Text',
-  description: 'Types the given text into the element identified by its accessibility role and name. Should be called after the "Get Interactible Elements From Current Webpage" tool.',
+  description: 'Types the given text into the currently focused element. IMPORTANT: You must use "Click Element" to click/focus on a textbox or input field BEFORE calling this tool.',
   schema: z.object({
-    role: z.string().describe('The accessibility role of the element'),
-    name: z.string().describe('The accessible name of the element'),
     text: z.string().describe('The text to type into the element'),
   }),
 });
@@ -242,7 +232,7 @@ const scrollPageTool = tool(async (_: any, { toolCallId }: { toolCallId: string 
 });
 
 export {
-  getInteractibleElementsTool,
+  getElementsTool,
   loadWebpageTool,
   openBrowserWindowTool,
   clickElementTool,
